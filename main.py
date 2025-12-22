@@ -28,28 +28,35 @@ def clean_html(raw_html):
     return cleantext
 
 def translate_and_explain(text):
-    # Prompt ကို ပိုပြီး တိကျခိုင်မာအောင် ပြင်ထားသည်
     prompt = (
         "You are a helpful Phone Sales Manager in Thailand speaking to Myanmar customers. "
         "Task: Translate and summarize the following tech news into BURMESE language. "
         "Requirement: The output must be 100% in Burmese. Explain the specs simply. "
-        "Do not output English text except for model names.\n\n"
         f"News Content: {text}"
     )
     
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    # API Key တွင် Space ပါနေပါက ဖယ်ရှားမည်
+    clean_key = GEMINI_API_KEY.strip()
+    
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={clean_key}"
     headers = {'Content-Type': 'application/json'}
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
     
     try:
         response = requests.post(url, headers=headers, data=json.dumps(payload))
         data = response.json()
+        
+        # အောင်မြင်ပါက
         if 'candidates' in data:
             return data['candidates'][0]['content']['parts'][0]['text']
+        
+        # မအောင်မြင်ပါက Error အစစ်ကို ထုတ်ပြမည်
         else:
-            return "ဘာသာပြန်စနစ် အလုပ်မလုပ်ပါ (API Quote ပြည့်သွားခြင်း သို့မဟုတ် Error တစ်ခုခုရှိနေပါသည်)"
+            error_msg = data.get('error', {}).get('message', 'Unknown Error')
+            return f"⚠️ Google Error: {error_msg}"
+            
     except Exception as e:
-        return f"Error: {e}"
+        return f"System Error: {e}"
 
 def check_news():
     feed = feedparser.parse("https://www.gsmarena.com/rss-news-reviews.php3")
