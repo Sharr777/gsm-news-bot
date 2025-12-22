@@ -35,10 +35,10 @@ def translate_and_explain(text):
         f"News Content: {text}"
     )
     
-    # API Key တွင် Space ပါနေပါက ဖယ်ရှားမည်
     clean_key = GEMINI_API_KEY.strip()
     
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={clean_key}"
+    # ပြင်ဆင်ချက်: Model နာမည်ကို 'gemini-1.5-flash-latest' သို့ ပြောင်းထားသည်
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={clean_key}"
     headers = {'Content-Type': 'application/json'}
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
     
@@ -46,14 +46,17 @@ def translate_and_explain(text):
         response = requests.post(url, headers=headers, data=json.dumps(payload))
         data = response.json()
         
-        # အောင်မြင်ပါက
         if 'candidates' in data:
             return data['candidates'][0]['content']['parts'][0]['text']
-        
-        # မအောင်မြင်ပါက Error အစစ်ကို ထုတ်ပြမည်
         else:
-            error_msg = data.get('error', {}).get('message', 'Unknown Error')
-            return f"⚠️ Google Error: {error_msg}"
+            # တကယ်လို့ Flash နဲ့ မရသေးရင် Pro Model ကို အလိုအလျောက် ပြောင်းသုံးမည်
+            print("Trying fallback model...")
+            url_backup = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={clean_key}"
+            response = requests.post(url_backup, headers=headers, data=json.dumps(payload))
+            data = response.json()
+            if 'candidates' in data:
+                 return data['candidates'][0]['content']['parts'][0]['text']
+            return "Error: ဘာသာပြန်စနစ် အလုပ်မလုပ်သေးပါ"
             
     except Exception as e:
         return f"System Error: {e}"
@@ -64,14 +67,11 @@ def check_news():
         return
 
     latest = feed.entries[0]
-    last_link = get_last_link()
     
-    # HTML tag တွေကို ရှင်းထုတ်ပြီးမှ ဘာသာပြန်ခိုင်းမည်
     clean_summary = clean_html(latest.summary)
     full_text = f"Title: {latest.title}\n\nContent: {clean_summary}"
 
-    # စမ်းသပ်ရန်အတွက် Link တူနေလည်း (၁) ခါတော့ အတင်းပို့ခိုင်းမည် (Test Mode)
-    # မှတ်ချက် - စမ်းပြီးရင် if latest.link != last_link: ကို ပြန်ပြောင်းဖို့ မမေ့ပါနဲ့
+    # Test Mode: Link တူနေလည်း အတင်းပို့ခိုင်းမည် (စမ်းသပ်ရန်)
     if latest.link == latest.link: 
         print("Translating news...")
         msg = translate_and_explain(full_text)
