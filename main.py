@@ -5,7 +5,6 @@ import requests
 import json
 import re
 
-# GitHub Secrets မှ တဆင့် ယူသုံးပါမည်
 bot = telebot.TeleBot(os.environ["TELEGRAM_TOKEN"])
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 CHAT_ID = os.environ["MY_CHAT_ID"]
@@ -37,29 +36,38 @@ def translate_and_explain(text):
     
     clean_key = GEMINI_API_KEY.strip()
     
-    # ပြင်ဆင်ချက်: Model နာမည်ကို 'gemini-1.5-flash-latest' သို့ ပြောင်းထားသည်
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={clean_key}"
-    headers = {'Content-Type': 'application/json'}
-    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+    # Model ၃ မျိုးကို တစ်ခုပြီးတစ်ခု စမ်းမည်
+    models_to_try = [
+        "gemini-1.5-flash", 
+        "gemini-1.5-flash-001", 
+        "gemini-pro"
+    ]
     
-    try:
-        response = requests.post(url, headers=headers, data=json.dumps(payload))
-        data = response.json()
+    last_error_msg = ""
+    
+    for model_name in models_to_try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={clean_key}"
+        headers = {'Content-Type': 'application/json'}
+        payload = {"contents": [{"parts": [{"text": prompt}]}]}
         
-        if 'candidates' in data:
-            return data['candidates'][0]['content']['parts'][0]['text']
-        else:
-            # တကယ်လို့ Flash နဲ့ မရသေးရင် Pro Model ကို အလိုအလျောက် ပြောင်းသုံးမည်
-            print("Trying fallback model...")
-            url_backup = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={clean_key}"
-            response = requests.post(url_backup, headers=headers, data=json.dumps(payload))
+        try:
+            response = requests.post(url, headers=headers, data=json.dumps(payload))
             data = response.json()
-            if 'candidates' in data:
-                 return data['candidates'][0]['content']['parts'][0]['text']
-            return "Error: ဘာသာပြန်စနစ် အလုပ်မလုပ်သေးပါ"
             
-    except Exception as e:
-        return f"System Error: {e}"
+            # အောင်မြင်ရင် ချက်ချင်း Return ပြန်မယ်
+            if 'candidates' in data:
+                return data['candidates'][0]['content']['parts'][0]['text']
+            
+            # မအောင်မြင်ရင် Error ကို မှတ်ထားပြီး နောက် Model တစ်ခု ဆက်စမ်းမယ်
+            else:
+                error_detail = data.get('error', {}).get('message', 'Unknown Error')
+                last_error_msg = f"Model {model_name} Error: {error_detail}"
+                
+        except Exception as e:
+            last_error_msg = str(e)
+
+    # ၃ မျိုးလုံး စမ်းလို့မှ မရရင် နောက်ဆုံး Error ကို ထုတ်ပြမည်
+    return f"⚠️ Google Error: {last_error_msg}"
 
 def check_news():
     feed = feedparser.parse("https://www.gsmarena.com/rss-news-reviews.php3")
@@ -71,7 +79,7 @@ def check_news():
     clean_summary = clean_html(latest.summary)
     full_text = f"Title: {latest.title}\n\nContent: {clean_summary}"
 
-    # Test Mode: Link တူနေလည်း အတင်းပို့ခိုင်းမည် (စမ်းသပ်ရန်)
+    # Test Mode: Link တူနေလည်း အတင်းပို့ခိုင်းမည်
     if latest.link == latest.link: 
         print("Translating news...")
         msg = translate_and_explain(full_text)
