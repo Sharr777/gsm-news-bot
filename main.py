@@ -88,7 +88,7 @@ def check_news():
     full_text = f"Title: {latest.title}\n\nContent: {clean_summary}"
 
     # Test Mode: အတင်းပို့ခိုင်းမည်
-    if latest.link == latest.link: 
+    if latest.link != get_last_link(): 
         msg = translate_and_explain(full_text)
         final_msg = f"🔔 **GSM Arena News Update**\n\n{msg}\n\n🔗 Source: {latest.link}"
         bot.send_message(CHAT_ID, final_msg, parse_mode="Markdown")
