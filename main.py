@@ -26,7 +26,32 @@ def clean_html(raw_html):
     cleantext = re.sub(cleanr, '', raw_html)
     return cleantext
 
+def get_available_models(key):
+    # သင့် Key ဖြင့် သုံး၍ရသော Model များကို စစ်ဆေးခြင်း
+    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={key}"
+    try:
+        response = requests.get(url)
+        data = response.json()
+        if 'models' in data:
+            names = [m['name'].replace('models/', '') for m in data['models']]
+            # Flash model များကို ဦးစားပေးရှာမည်
+            preferred = [n for n in names if 'flash' in n]
+            return preferred if preferred else names
+        return []
+    except:
+        return []
+
 def translate_and_explain(text):
+    clean_key = GEMINI_API_KEY.strip()
+    
+    # ၁။ အရင်ဆုံး သုံးလို့ရမယ့် Model ကို API လှမ်းမေးမယ်
+    available_models = get_available_models(clean_key)
+    
+    # ၂။ သုံးရမယ့် Model ကို ရွေးမယ် (ဘာမှမတွေ့ရင် gemini-1.5-flash ကို မှန်းရမ်းသုံးမယ်)
+    model_to_use = available_models[0] if available_models else "gemini-1.5-flash"
+    
+    print(f"Using Model: {model_to_use}") # Log ထုတ်ကြည့်ခြင်း
+
     prompt = (
         "You are a helpful Phone Sales Manager in Thailand speaking to Myanmar customers. "
         "Task: Translate and summarize the following tech news into BURMESE language. "
@@ -34,40 +59,24 @@ def translate_and_explain(text):
         f"News Content: {text}"
     )
     
-    clean_key = GEMINI_API_KEY.strip()
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_to_use}:generateContent?key={clean_key}"
+    headers = {'Content-Type': 'application/json'}
+    payload = {"contents": [{"parts": [{"text": prompt}]}]}
     
-    # Model ၃ မျိုးကို တစ်ခုပြီးတစ်ခု စမ်းမည်
-    models_to_try = [
-        "gemini-1.5-flash", 
-        "gemini-1.5-flash-001", 
-        "gemini-pro"
-    ]
-    
-    last_error_msg = ""
-    
-    for model_name in models_to_try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={clean_key}"
-        headers = {'Content-Type': 'application/json'}
-        payload = {"contents": [{"parts": [{"text": prompt}]}]}
+    try:
+        response = requests.post(url, headers=headers, data=json.dumps(payload))
+        data = response.json()
         
-        try:
-            response = requests.post(url, headers=headers, data=json.dumps(payload))
-            data = response.json()
+        if 'candidates' in data:
+            return data['candidates'][0]['content']['parts'][0]['text']
+        else:
+            # Error တက်ရင် ဘာ Model တွေ ရလဲဆိုတာ Telegram မှာ ပြန်ပြောပြမယ်
+            error_msg = data.get('error', {}).get('message', 'Unknown Error')
+            models_str = ", ".join(available_models)
+            return f"⚠️ Error: {error_msg}\n\n✅ Available Models for your Key: {models_str}"
             
-            # အောင်မြင်ရင် ချက်ချင်း Return ပြန်မယ်
-            if 'candidates' in data:
-                return data['candidates'][0]['content']['parts'][0]['text']
-            
-            # မအောင်မြင်ရင် Error ကို မှတ်ထားပြီး နောက် Model တစ်ခု ဆက်စမ်းမယ်
-            else:
-                error_detail = data.get('error', {}).get('message', 'Unknown Error')
-                last_error_msg = f"Model {model_name} Error: {error_detail}"
-                
-        except Exception as e:
-            last_error_msg = str(e)
-
-    # ၃ မျိုးလုံး စမ်းလို့မှ မရရင် နောက်ဆုံး Error ကို ထုတ်ပြမည်
-    return f"⚠️ Google Error: {last_error_msg}"
+    except Exception as e:
+        return f"System Error: {e}"
 
 def check_news():
     feed = feedparser.parse("https://www.gsmarena.com/rss-news-reviews.php3")
@@ -75,20 +84,15 @@ def check_news():
         return
 
     latest = feed.entries[0]
-    
     clean_summary = clean_html(latest.summary)
     full_text = f"Title: {latest.title}\n\nContent: {clean_summary}"
 
-    # Test Mode: Link တူနေလည်း အတင်းပို့ခိုင်းမည်
+    # Test Mode: အတင်းပို့ခိုင်းမည်
     if latest.link == latest.link: 
-        print("Translating news...")
         msg = translate_and_explain(full_text)
-        
         final_msg = f"🔔 **GSM Arena News Update**\n\n{msg}\n\n🔗 Source: {latest.link}"
-        
         bot.send_message(CHAT_ID, final_msg, parse_mode="Markdown")
         save_last_link(latest.link)
-        print("Sent to Telegram.")
 
 if __name__ == "__main__":
     check_news()
