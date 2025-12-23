@@ -4,25 +4,26 @@ import feedparser
 import requests
 import json
 import re
+from facebook_scraper import get_posts
 
 bot = telebot.TeleBot(os.environ["TELEGRAM_TOKEN"])
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
-# MY_CHAT_ID ကို မသုံးတော့ပါ (ဖိုင်ထဲကလူတွေကို ပို့မှာမို့လို့ပါ)
 
 STATE_FILE = "last_link.txt"
+FB_STATE_FILE = "last_fb_id.txt"
 SUBS_FILE = "subscribers.txt"
 
-def get_last_link():
-    if os.path.exists(STATE_FILE):
-        with open(STATE_FILE, "r") as f:
+# --- Helper Functions ---
+def get_file_content(filename):
+    if os.path.exists(filename):
+        with open(filename, "r") as f:
             return f.read().strip()
     return ""
 
-def save_last_link(link):
-    with open(STATE_FILE, "w") as f:
-        f.write(link)
+def save_file_content(filename, content):
+    with open(filename, "w") as f:
+        f.write(str(content))
 
-# --- Subscriber စနစ် ---
 def get_subscribers():
     if os.path.exists(SUBS_FILE):
         with open(SUBS_FILE, "r") as f:
@@ -37,9 +38,7 @@ def save_subscribers(subs):
 def check_new_subscribers():
     subs = get_subscribers()
     updated = False
-    
     try:
-        # Start နှိပ်သူများကို စစ်ဆေးခြင်း
         updates = bot.get_updates()
         for update in updates:
             if update.message and update.message.text == "/start":
@@ -47,57 +46,37 @@ def check_new_subscribers():
                 if chat_id not in subs:
                     subs.add(chat_id)
                     updated = True
-                    # ကြိုဆိုစကား ပို့မည်
                     try:
-                        bot.send_message(chat_id, "မင်္ဂလာပါ! GSM News Bot မှ ကြိုဆိုပါတယ်။ သတင်းအသစ်ထွက်တိုင်း လူကြီးမင်းထံ အရောက်ပို့ပေးသွားမှာပါ။")
+                        bot.send_message(chat_id, "မင်္ဂလာပါ! GSM News Bot (Mission 1 & 2) မှ ကြိုဆိုပါတယ်။")
                     except:
                         pass
-
-        # Update များကို ဖတ်ပြီးကြောင်း အကြောင်းကြားခြင်း (နောက်တစ်ခါ ထပ်မဖတ်မိအောင်)
         if updates:
             bot.get_updates(offset=updates[-1].update_id + 1)
-            
         if updated:
             save_subscribers(subs)
-            print("New subscribers added.")
-            
     except Exception as e:
         print(f"Subscriber check error: {e}")
-
     return subs
 
-# --- AI & News Logic ---
-def clean_html(raw_html):
-    cleanr = re.compile('<.*?>')
-    cleantext = re.sub(cleanr, '', raw_html)
-    return cleantext
-
-def get_available_models(key):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={key}"
-    try:
-        response = requests.get(url)
-        data = response.json()
-        if 'models' in data:
-            names = [m['name'].replace('models/', '') for m in data['models']]
-            preferred = [n for n in names if 'flash' in n]
-            return preferred if preferred else names
-        return []
-    except:
-        return []
-
-def translate_and_explain(text):
+def get_ai_translation(text, style="news"):
     clean_key = GEMINI_API_KEY.strip()
-    available_models = get_available_models(clean_key)
-    model_to_use = available_models[0] if available_models else "gemini-1.5-flash"
     
-    prompt = (
-        "Task: Translate and summarize this tech news into natural Myanmar (Burmese) language. "
-        "Style: Professional Tech News Reporter. "
-        "Rules: 1. Do not introduce yourself. 2. Do not mention being a sales manager or living in Thailand. 3. Just report the news facts directly. "
-        f"News Content: {text}"
-    )
-    
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_to_use}:generateContent?key={clean_key}"
+    if style == "facebook":
+        prompt = (
+            "Task: Summarize this Mobile Phone Shop's Facebook Post into Burmese. "
+            "Style: Sales Manager looking at competitor's price. "
+            "Requirement: Highlight the phone model and price clearly. "
+            f"Post Content: {text}"
+        )
+    else:
+        prompt = (
+            "Task: Translate tech news into Burmese. "
+            "Style: Professional Reporter. "
+            f"Content: {text}"
+        )
+
+    # Simple logic to find working model
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={clean_key}"
     headers = {'Content-Type': 'application/json'}
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
     
@@ -106,37 +85,62 @@ def translate_and_explain(text):
         data = response.json()
         if 'candidates' in data:
             return data['candidates'][0]['content']['parts'][0]['text']
-        else:
-            return "Error: ဘာသာပြန်စနစ် ခေတ္တအလုပ်မလုပ်ပါ"
+    except:
+        pass
+    return "AI ဘာသာပြန်မရပါ (Original Text ကို ဖတ်ရှုပါ)"
+
+# --- Mission 1: GSM Arena ---
+def check_gsm_arena(subscribers):
+    print("Checking GSM Arena...")
+    try:
+        feed = feedparser.parse("https://www.gsmarena.com/rss-news-reviews.php3")
+        if not feed.entries: return
+        latest = feed.entries[0]
+        
+        cleanr = re.compile('<.*?>')
+        clean_summary = re.sub(cleanr, '', latest.summary)
+        
+        if latest.link != get_file_content(STATE_FILE):
+            msg = get_ai_translation(f"{latest.title}\n{clean_summary}", style="news")
+            final_msg = f"🔔 GSM News Update\n\n{msg}\n\n🔗 {latest.link}"
+            
+            for chat_id in subscribers:
+                try: bot.send_message(chat_id, final_msg)
+                except: pass
+            
+            save_file_content(STATE_FILE, latest.link)
     except Exception as e:
-        return f"System Error: {e}"
+        print(f"GSM Error: {e}")
 
-def check_news():
-    # ၁။ Subscriber အသစ်ရှိမရှိ အရင်စစ်မယ်
-    subscribers = check_new_subscribers()
-    
-    # ၂။ သတင်းအသစ်ရှိမရှိ စစ်မယ်
-    feed = feedparser.parse("https://www.gsmarena.com/rss-news-reviews.php3")
-    if not feed.entries:
-        return
-
-    latest = feed.entries[0]
-    clean_summary = clean_html(latest.summary)
-    full_text = f"Title: {latest.title}\n\nContent: {clean_summary}"
-
-    if latest.link != get_last_link():
-        print("New news found! Translating...")
-        msg = translate_and_explain(full_text)
-        final_msg = f"🔔 GSM Arena News Update\n\n{msg}\n\n🔗 Source: {latest.link}"
-        
-        # ၃။ ရှိသမျှ Subscriber အားလုံးကို လိုက်ပို့မယ်
-        for chat_id in subscribers:
-            try:
-                bot.send_message(chat_id, final_msg)
-            except Exception as e:
-                print(f"Failed to send to {chat_id}: {e}")
-        
-        save_last_link(latest.link)
+# --- Mission 2: Facebook Page ---
+def check_facebook_page(subscribers):
+    print("Checking Facebook...")
+    page_name = 'TONMOBILEBANGKOK'
+    try:
+        # နောက်ဆုံး Post တစ်ခုကိုပဲ ယူမယ်
+        for post in get_posts(page_name, pages=1):
+            post_id = str(post['post_id'])
+            text = post.get('text', '')
+            post_url = post.get('post_url', f"https://www.facebook.com/{post_id}")
+            
+            # Post ID အသစ်ဖြစ်မှ လုပ်မယ်
+            if post_id != get_file_content(FB_STATE_FILE):
+                if text:
+                    print("New FB Post found!")
+                    msg = get_ai_translation(text, style="facebook")
+                    final_msg = f"📘 **Ton Mobile Update**\n\n{msg}\n\n🔗 Link: {post_url}"
+                    
+                    for chat_id in subscribers:
+                        try: bot.send_message(chat_id, final_msg)
+                        except: pass
+                
+                save_file_content(FB_STATE_FILE, post_id)
+            break # Loop တစ်ခါပတ်ပြီး ရပ်မယ် (အသစ်ဆုံးတစ်ခုပဲလိုချင်လို့)
+            
+    except Exception as e:
+        print(f"Facebook Error (May be blocked): {e}")
 
 if __name__ == "__main__":
-    check_news()
+    subs = check_new_subscribers()
+    check_gsm_arena(subs)
+    check_facebook_page(subs)
