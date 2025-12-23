@@ -44,7 +44,6 @@ def translate_and_explain(text):
     available_models = get_available_models(clean_key)
     model_to_use = available_models[0] if available_models else "gemini-1.5-flash"
     
-    # ပြင်ဆင်ချက် - ကိုယ့်အကြောင်းမပြောဘဲ သတင်းသီးသန့် ဘာသာပြန်ရန် ခိုင်းထားသည်
     prompt = (
         "Task: Translate and summarize this tech news into natural Myanmar (Burmese) language. "
         "Style: Professional Tech News Reporter. "
@@ -77,11 +76,15 @@ def check_news():
     clean_summary = clean_html(latest.summary)
     full_text = f"Title: {latest.title}\n\nContent: {clean_summary}"
 
-    # အမှန်အတိုင်း ပြန်ချိန်းလိုက်ပါပြီ (သတင်းအသစ်ဆိုမှ ပို့မည်)
     if latest.link != get_last_link():
         msg = translate_and_explain(full_text)
-        final_msg = f"🔔 **GSM Arena News Update**\n\n{msg}\n\n🔗 Source: {latest.link}"
-        bot.send_message(CHAT_ID, final_msg, parse_mode="Markdown")
+        
+        # ပြင်ဆင်ချက် - parse_mode ကို ဖြုတ်လိုက်သည် (Error ကင်းရှင်းရန်)
+        final_msg = f"🔔 GSM Arena News Update\n\n{msg}\n\n🔗 Source: {latest.link}"
+        
+        # ဒီနေရာမှာ parse_mode="Markdown" မထည့်တော့ပါ
+        bot.send_message(CHAT_ID, final_msg) 
+        
         save_last_link(latest.link)
 
 if __name__ == "__main__":
