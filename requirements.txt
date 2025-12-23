@@ -2,3 +2,4 @@ pytelegrambotapi
 feedparser
 requests
 facebook-scraper
+lxml_html_clean
