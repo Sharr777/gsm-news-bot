@@ -34,5 +34,5 @@ jobs:
       run: |
         git config --global user.name 'NewsBot'
         git config --global user.email 'bot@noreply.github.com'
-        git add last_link.txt subscribers.txt
-        git diff --quiet && git diff --staged --quiet || (git commit -m "Update last news link" && git push)
+        git add last_link.txt subscribers.txt last_fb_id.txt
+        git diff --quiet && git diff --staged --quiet || (git commit -m "Update data" && git push)
