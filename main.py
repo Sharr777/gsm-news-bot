@@ -12,8 +12,18 @@ GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 STATE_FILE = "last_link.txt"
 FB_STATE_FILE = "last_fb_id.txt"
 SUBS_FILE = "subscribers.txt"
+COOKIES_FILE = "fb_cookies.txt" 
 
 # --- Helper Functions ---
+def setup_cookies():
+    # Secret ထဲက Cookie စာသားတွေကို ဖိုင်အဖြစ် ပြန်ထုတ်မည်
+    cookies_content = os.environ.get("FB_COOKIES", "")
+    if cookies_content:
+        with open(COOKIES_FILE, "w") as f:
+            f.write(cookies_content)
+        return COOKIES_FILE
+    return None
+
 def get_file_content(filename):
     if os.path.exists(filename):
         with open(filename, "r") as f:
@@ -75,7 +85,6 @@ def get_ai_translation(text, style="news"):
             f"Content: {text}"
         )
 
-    # Simple logic to find working model
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={clean_key}"
     headers = {'Content-Type': 'application/json'}
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
@@ -116,17 +125,18 @@ def check_gsm_arena(subscribers):
 def check_facebook_page(subscribers):
     print("Checking Facebook...")
     page_name = 'TONMOBILEBANGKOK'
+    cookies_path = setup_cookies() # Cookie ဖိုင်ကို ဆောက်ပြီး ယူသုံးပါမည်
     found_any = False
     
     try:
-        # ပြင်ဆင်ချက်: pages=3 သို့ တိုးထားသည် (ပိုသေချာအောင် ရှာရန်)
-        for post in get_posts(page_name, pages=3):
+        # cookies Parameter ထည့်သုံးထားသည်
+        for post in get_posts(page_name, pages=3, cookies=cookies_path):
             found_any = True
             post_id = str(post['post_id'])
             text = post.get('text', '')
             post_url = post.get('post_url', f"https://www.facebook.com/{post_id}")
             
-            print(f"Found post: {post_id}") # Log မှာ ပေါ်အောင် ထည့်ထားသည်
+            print(f"Found post: {post_id}")
 
             if post_id != get_file_content(FB_STATE_FILE):
                 if text:
@@ -141,12 +151,10 @@ def check_facebook_page(subscribers):
                 save_file_content(FB_STATE_FILE, post_id)
             else:
                 print("Old post. Skipping.")
-            
-            # Post တစ်ခုတွေ့တာနဲ့ ရပ်မယ် (အသစ်ဆုံးတစ်ခုပဲလိုချင်လို့)
             break 
         
         if not found_any:
-            print("No posts found at all (Check connection or page name).")
+            print("No posts found (Even with cookies). Check if cookies are expired.")
 
     except Exception as e:
         print(f"Facebook Error: {e}")
