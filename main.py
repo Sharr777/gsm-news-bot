@@ -8,158 +8,57 @@ from facebook_scraper import get_posts
 
 bot = telebot.TeleBot(os.environ["TELEGRAM_TOKEN"])
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
+COOKIES_FILE = "fb_cookies.txt"
 
-STATE_FILE = "last_link.txt"
-FB_STATE_FILE = "last_fb_id.txt"
-SUBS_FILE = "subscribers.txt"
-COOKIES_FILE = "fb_cookies.txt" 
+# --- Debug Check ---
+def debug_cookie_status():
+    cookie_data = os.environ.get("FB_COOKIES", "")
+    if not cookie_data:
+        print("❌ ERROR: 'FB_COOKIES' Secret not found in GitHub Settings!")
+        return None
+    else:
+        print(f"✅ SUCCESS: Cookie found! Length: {len(cookie_data)} characters.")
+        with open(COOKIES_FILE, "w") as f:
+            f.write(cookie_data)
+        return COOKIES_FILE
 
 # --- Helper Functions ---
-def setup_cookies():
-    # Secret ထဲက Cookie စာသားတွေကို ဖိုင်အဖြစ် ပြန်ထုတ်မည်
-    cookies_content = os.environ.get("FB_COOKIES", "")
-    if cookies_content:
-        with open(COOKIES_FILE, "w") as f:
-            f.write(cookies_content)
-        return COOKIES_FILE
-    return None
-
-def get_file_content(filename):
-    if os.path.exists(filename):
-        with open(filename, "r") as f:
-            return f.read().strip()
-    return ""
-
-def save_file_content(filename, content):
-    with open(filename, "w") as f:
-        f.write(str(content))
-
-def get_subscribers():
-    if os.path.exists(SUBS_FILE):
-        with open(SUBS_FILE, "r") as f:
-            return set(line.strip() for line in f if line.strip())
-    return set()
-
-def save_subscribers(subs):
-    with open(SUBS_FILE, "w") as f:
-        for sub in subs:
-            f.write(f"{sub}\n")
-
-def check_new_subscribers():
-    subs = get_subscribers()
-    updated = False
-    try:
-        updates = bot.get_updates()
-        for update in updates:
-            if update.message and update.message.text == "/start":
-                chat_id = str(update.message.chat.id)
-                if chat_id not in subs:
-                    subs.add(chat_id)
-                    updated = True
-                    try:
-                        bot.send_message(chat_id, "မင်္ဂလာပါ! GSM News Bot (Mission 1 & 2) မှ ကြိုဆိုပါတယ်။")
-                    except:
-                        pass
-        if updates:
-            bot.get_updates(offset=updates[-1].update_id + 1)
-        if updated:
-            save_subscribers(subs)
-    except Exception as e:
-        print(f"Subscriber check error: {e}")
-    return subs
-
 def get_ai_translation(text, style="news"):
-    clean_key = GEMINI_API_KEY.strip()
-    
-    if style == "facebook":
-        prompt = (
-            "Task: Summarize this Mobile Phone Shop's Facebook Post into Burmese. "
-            "Style: Sales Manager looking at competitor's price. "
-            "Requirement: Highlight the phone model and price clearly. "
-            f"Post Content: {text}"
-        )
-    else:
-        prompt = (
-            "Task: Translate tech news into Burmese. "
-            "Style: Professional Reporter. "
-            f"Content: {text}"
-        )
-
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={clean_key}"
-    headers = {'Content-Type': 'application/json'}
-    payload = {"contents": [{"parts": [{"text": prompt}]}]}
-    
     try:
+        clean_key = GEMINI_API_KEY.strip()
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={clean_key}"
+        headers = {'Content-Type': 'application/json'}
+        prompt = f"Translate this to Burmese summary: {text}"
+        payload = {"contents": [{"parts": [{"text": prompt}]}]}
         response = requests.post(url, headers=headers, data=json.dumps(payload))
         data = response.json()
         if 'candidates' in data:
             return data['candidates'][0]['content']['parts'][0]['text']
-    except:
-        pass
-    return "AI ဘာသာပြန်မရပါ (Original Text ကို ဖတ်ရှုပါ)"
-
-# --- Mission 1: GSM Arena ---
-def check_gsm_arena(subscribers):
-    print("Checking GSM Arena...")
-    try:
-        feed = feedparser.parse("https://www.gsmarena.com/rss-news-reviews.php3")
-        if not feed.entries: return
-        latest = feed.entries[0]
-        
-        cleanr = re.compile('<.*?>')
-        clean_summary = re.sub(cleanr, '', latest.summary)
-        
-        if latest.link != get_file_content(STATE_FILE):
-            msg = get_ai_translation(f"{latest.title}\n{clean_summary}", style="news")
-            final_msg = f"🔔 GSM News Update\n\n{msg}\n\n🔗 {latest.link}"
-            
-            for chat_id in subscribers:
-                try: bot.send_message(chat_id, final_msg)
-                except: pass
-            
-            save_file_content(STATE_FILE, latest.link)
     except Exception as e:
-        print(f"GSM Error: {e}")
+        print(f"AI Error: {e}")
+    return "AI Error (See original link)"
 
-# --- Mission 2: Facebook Page ---
-def check_facebook_page(subscribers):
-    print("Checking Facebook...")
-    page_name = 'TONMOBILEBANGKOK'
-    cookies_path = setup_cookies() # Cookie ဖိုင်ကို ဆောက်ပြီး ယူသုံးပါမည်
-    found_any = False
+def check_facebook_page():
+    print("--- Starting Facebook Check ---")
+    cookies_path = debug_cookie_status() # Cookie စစ်ဆေးမည်
     
+    if not cookies_path:
+        print("Skipping Facebook check due to missing cookies.")
+        return
+
+    page_name = 'TONMOBILEBANGKOK'
     try:
-        # cookies Parameter ထည့်သုံးထားသည်
-        for post in get_posts(page_name, pages=3, cookies=cookies_path):
-            found_any = True
-            post_id = str(post['post_id'])
-            text = post.get('text', '')
-            post_url = post.get('post_url', f"https://www.facebook.com/{post_id}")
+        print(f"Scraping page: {page_name}...")
+        # pages=2 နဲ့ စမ်းမည်
+        for post in get_posts(page_name, pages=2, cookies=cookies_path):
+            print(f"✅ FOUND A POST! ID: {post['post_id']}")
+            # Post တစ်ခုတွေ့တာနဲ့ စမ်းသပ်မှု အောင်မြင်ပြီမို့ ရပ်လိုက်မယ်
+            break
+        else:
+            print("⚠️ WARNING: No posts found. Facebook might be blocking the IP even with cookies.")
             
-            print(f"Found post: {post_id}")
-
-            if post_id != get_file_content(FB_STATE_FILE):
-                if text:
-                    print("New FB Post found! Sending...")
-                    msg = get_ai_translation(text, style="facebook")
-                    final_msg = f"📘 **Ton Mobile Update**\n\n{msg}\n\n🔗 Link: {post_url}"
-                    
-                    for chat_id in subscribers:
-                        try: bot.send_message(chat_id, final_msg)
-                        except: pass
-                
-                save_file_content(FB_STATE_FILE, post_id)
-            else:
-                print("Old post. Skipping.")
-            break 
-        
-        if not found_any:
-            print("No posts found (Even with cookies). Check if cookies are expired.")
-
     except Exception as e:
-        print(f"Facebook Error: {e}")
+        print(f"❌ CRITICAL ERROR: {e}")
 
 if __name__ == "__main__":
-    subs = check_new_subscribers()
-    check_gsm_arena(subs)
-    check_facebook_page(subs)
+    check_facebook_page()
