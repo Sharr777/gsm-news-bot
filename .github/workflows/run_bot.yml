@@ -2,32 +2,33 @@ name: GSM News Bot
 
 on:
   schedule:
-    - cron: '*/30 * * * *'  # မိနစ် ၃၀ တိုင်း Run မည်
-  workflow_dispatch:        # ကိုယ်တိုင် ခလုတ်နှိပ်ပြီး Run ချင်တဲ့အခါအတွက်
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
 
 jobs:
-  run-bot:
+  run_bot:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      
+
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v2
 
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v2
       with:
         python-version: '3.9'
 
     - name: Install dependencies
-      run: pip install -r requirements.txt
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
 
     - name: Run Bot Script
       env:
         TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         MY_CHAT_ID: ${{ secrets.MY_CHAT_ID }}
+        FB_COOKIES: ${{ secrets.FB_COOKIES }}
       run: python main.py
 
     - name: Commit and Push if changed
