@@ -16,11 +16,23 @@ COOKIES_FILE = "fb_cookies.txt"
 
 # --- Helper Functions ---
 def setup_cookies():
-    # Secret ထဲက Cookie စာသားတွေကို ဖိုင်အဖြစ် ပြန်ထုတ်မည်
-    cookies_content = os.environ.get("FB_COOKIES", "")
-    if cookies_content:
+    # Cookie များကို ပြန်လည်ပြုပြင်ခြင်း (Tabs များ ပျောက်နေလျှင် ပြန်ထည့်မည်)
+    raw_data = os.environ.get("FB_COOKIES", "")
+    if raw_data:
+        # Space များနေလျှင် Tab သို့ ပြောင်းမည် (Netscape format ဝင်အောင်)
+        fixed_data = ""
+        for line in raw_data.splitlines():
+            if line.strip() and not line.startswith("#"):
+                parts = line.split()
+                if len(parts) >= 7:
+                    fixed_data += "\t".join(parts) + "\n"
+                else:
+                    fixed_data += line + "\n"
+            else:
+                fixed_data += line + "\n"
+        
         with open(COOKIES_FILE, "w") as f:
-            f.write(cookies_content)
+            f.write(fixed_data)
         return COOKIES_FILE
     return None
 
@@ -121,16 +133,16 @@ def check_gsm_arena(subscribers):
     except Exception as e:
         print(f"GSM Error: {e}")
 
-# --- Mission 2: Facebook Page ---
+# --- Mission 2: Facebook Page (mbasic mode) ---
 def check_facebook_page(subscribers):
-    print("Checking Facebook...")
+    print("Checking Facebook (mbasic mode)...")
     page_name = 'TONMOBILEBANGKOK'
     cookies_path = setup_cookies()
     found_any = False
     
     try:
-        # pages=5 ထိ တိုးပြီး ရှာခိုင်းထားသည်
-        for post in get_posts(page_name, pages=5, cookies=cookies_path):
+        # base_url ကို mbasic သို့ ပြောင်းပြီး ရှာခိုင်းခြင်း
+        for post in get_posts(page_name, pages=3, cookies=cookies_path, base_url="https://mbasic.facebook.com"):
             found_any = True
             post_id = str(post['post_id'])
             text = post.get('text', '')
@@ -154,7 +166,7 @@ def check_facebook_page(subscribers):
             break 
         
         if not found_any:
-            print("No posts found. (Cookie valid but IP blocked or Layout changed)")
+            print("No posts found via mbasic.")
 
     except Exception as e:
         print(f"Facebook Error: {e}")
