@@ -1,3 +1,4 @@
 pytelegrambotapi
 feedparser
 requests
+facebook-scraper
