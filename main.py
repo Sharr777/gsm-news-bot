@@ -116,17 +116,21 @@ def check_gsm_arena(subscribers):
 def check_facebook_page(subscribers):
     print("Checking Facebook...")
     page_name = 'TONMOBILEBANGKOK'
+    found_any = False
+    
     try:
-        # နောက်ဆုံး Post တစ်ခုကိုပဲ ယူမယ်
-        for post in get_posts(page_name, pages=1):
+        # ပြင်ဆင်ချက်: pages=3 သို့ တိုးထားသည် (ပိုသေချာအောင် ရှာရန်)
+        for post in get_posts(page_name, pages=3):
+            found_any = True
             post_id = str(post['post_id'])
             text = post.get('text', '')
             post_url = post.get('post_url', f"https://www.facebook.com/{post_id}")
             
-            # Post ID အသစ်ဖြစ်မှ လုပ်မယ်
+            print(f"Found post: {post_id}") # Log မှာ ပေါ်အောင် ထည့်ထားသည်
+
             if post_id != get_file_content(FB_STATE_FILE):
                 if text:
-                    print("New FB Post found!")
+                    print("New FB Post found! Sending...")
                     msg = get_ai_translation(text, style="facebook")
                     final_msg = f"📘 **Ton Mobile Update**\n\n{msg}\n\n🔗 Link: {post_url}"
                     
@@ -135,10 +139,17 @@ def check_facebook_page(subscribers):
                         except: pass
                 
                 save_file_content(FB_STATE_FILE, post_id)
-            break # Loop တစ်ခါပတ်ပြီး ရပ်မယ် (အသစ်ဆုံးတစ်ခုပဲလိုချင်လို့)
+            else:
+                print("Old post. Skipping.")
             
+            # Post တစ်ခုတွေ့တာနဲ့ ရပ်မယ် (အသစ်ဆုံးတစ်ခုပဲလိုချင်လို့)
+            break 
+        
+        if not found_any:
+            print("No posts found at all (Check connection or page name).")
+
     except Exception as e:
-        print(f"Facebook Error (May be blocked): {e}")
+        print(f"Facebook Error: {e}")
 
 if __name__ == "__main__":
     subs = check_new_subscribers()
