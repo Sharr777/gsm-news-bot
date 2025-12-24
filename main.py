@@ -1,147 +1,85 @@
 import os
-import telebot
-import feedparser
 import requests
 import json
-import re
-import time
 
-bot = telebot.TeleBot(os.environ["TELEGRAM_TOKEN"])
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+# API Key ကို ယူမည်
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
-# RSS Links
-FB_RSS_URL = "https://fetchrss.com/feed/1vYTK6GaV7wB1vYTHS9igFgw.rss"
-GSM_RSS_URL = "https://www.gsmarena.com/rss-news-reviews.php3"
+def test_ai_connection():
+    print("--- 🤖 AI DIAGNOSTIC START ---")
+    
+    # ၁။ Key ရှိ/မရှိ စစ်မည်
+    if not GEMINI_API_KEY:
+        print("❌ CRITICAL: GEMINI_API_KEY is MISSING in environment variables!")
+        print("👉 Fix: Go to Settings > Secrets > Actions and add GEMINI_API_KEY.")
+        return
 
-STATE_FILE = "last_link.txt"
-FB_STATE_FILE = "last_fb_id.txt"
-SUBS_FILE = "subscribers.txt"
-
-# --- Helper Functions ---
-def get_file_content(filename):
-    if os.path.exists(filename):
-        with open(filename, "r") as f:
-            return f.read().strip()
-    return ""
-
-def save_file_content(filename, content):
-    with open(filename, "w") as f:
-        f.write(str(content))
-
-def get_subscribers():
-    if os.path.exists(SUBS_FILE):
-        with open(SUBS_FILE, "r") as f:
-            return set(line.strip() for line in f if line.strip())
-    return set()
-
-def save_subscribers(subs):
-    with open(SUBS_FILE, "w") as f:
-        for sub in subs:
-            f.write(f"{sub}\n")
-
-def check_new_subscribers():
-    subs = get_subscribers()
-    updated = False
+    print(f"✅ API Key found (Length: {len(GEMINI_API_KEY)})")
+    
+    # ၂။ Available Models များကို စစ်ဆေးမည် (List Models)
+    print("\n--- Checking Available Models ---")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={GEMINI_API_KEY}"
+    
     try:
-        updates = bot.get_updates()
-        for update in updates:
-            if update.message and update.message.text == "/start":
-                chat_id = str(update.message.chat.id)
-                if chat_id not in subs:
-                    subs.add(chat_id)
-                    updated = True
-                    try:
-                        bot.send_message(chat_id, "မင်္ဂလာပါ! GSM News Bot (Mission 1 & 2) မှ ကြိုဆိုပါတယ်။")
-                    except:
-                        pass
-        if updates:
-            bot.get_updates(offset=updates[-1].update_id + 1)
-        if updated:
-            save_subscribers(subs)
-    except Exception as e:
-        print(f"Subscriber check error: {e}")
-    return subs
-
-def get_ai_translation(text, style="news"):
-    clean_key = GEMINI_API_KEY.strip()
-    if not clean_key:
-        return "AI Key Missing"
-
-    if style == "facebook":
-        prompt = f"Summarize this Phone Shop Post in Burmese (Highlight model & price). Keep it short: {text}"
-    else:
-        prompt = f"Translate tech news to Burmese (Professional style). Keep it short: {text}"
-
-    # Model မျိုးစုံကို လှည့်ပတ်စမ်းသပ်မည့် စနစ်
-    models_to_try = ["gemini-1.5-flash", "gemini-1.5-flash-001", "gemini-pro"]
-
-    for model_name in models_to_try:
-        for version in ["v1beta", "v1"]:
-            url = f"https://generativelanguage.googleapis.com/{version}/models/{model_name}:generateContent?key={clean_key}"
-            headers = {'Content-Type': 'application/json'}
-            payload = {"contents": [{"parts": [{"text": prompt}]}]}
+        response = requests.get(url)
+        if response.status_code == 200:
+            data = response.json()
+            print("✅ Access Granted! Available Models for your Key:")
+            available_models = []
+            if 'models' in data:
+                for m in data['models']:
+                    # generateContent လုပ်လို့ရတဲ့ Model တွေကိုပဲ ပြမယ်
+                    if "generateContent" in m.get('supportedGenerationMethods', []):
+                        name = m['name'].replace('models/', '')
+                        print(f"   - {name}")
+                        available_models.append(name)
             
+            if not available_models:
+                print("⚠️ No models found that support content generation.")
+        else:
+            print(f"❌ List Models Failed: Status {response.status_code}")
+            print(f"Response: {response.text}")
+            return
+            
+    except Exception as e:
+        print(f"❌ Connection Error: {e}")
+        return
+
+    # ၃။ စာစမ်းရေးခိုင်းမည် (Test Generation)
+    print("\n--- Testing Translation ---")
+    
+    # အဆင်ပြေဆုံး Model တစ်ခုကို ရွေးစမ်းမည်
+    target_model = "gemini-1.5-flash" 
+    if "gemini-1.5-flash" not in available_models:
+        # 1.5-flash မရှိရင် ရှိတဲ့အထဲက ပထမဆုံးတစ်ခုကို ယူသုံးမယ်
+        if available_models:
+            target_model = available_models[0]
+            print(f"⚠️ 'gemini-1.5-flash' not found. Switching to '{target_model}'...")
+    
+    test_url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent?key={GEMINI_API_KEY}"
+    payload = {
+        "contents": [{"parts": [{"text": "Translate to Burmese: Hello World"}]}]
+    }
+    
+    try:
+        response = requests.post(test_url, headers={'Content-Type': 'application/json'}, data=json.dumps(payload))
+        
+        if response.status_code == 200:
+            print(f"🎉 SUCCESS! The AI is working with model '{target_model}'.")
+            data = response.json()
             try:
-                response = requests.post(url, headers=headers, data=json.dumps(payload))
-                if response.status_code == 200:
-                    data = response.json()
-                    if 'candidates' in data:
-                        return data['candidates'][0]['content']['parts'][0]['text']
+                result = data['candidates'][0]['content']['parts'][0]['text']
+                print(f"🤖 AI Reply: {result}")
             except:
-                pass
-            
-    return "AI ဘာသာပြန်မရပါ (Original Text ကို ဖတ်ရှုပါ)"
-
-# --- Mission 1: GSM Arena ---
-def check_gsm_arena(subscribers):
-    print("Checking GSM Arena...")
-    try:
-        feed = feedparser.parse(GSM_RSS_URL)
-        if not feed.entries: return
-        latest = feed.entries[0]
-        
-        # TEST MODE: Link တူလည်း ဇွတ်ပို့ခိုင်းထားသည် (if True)
-        if True: 
-            cleanr = re.compile('<.*?>')
-            clean_summary = re.sub(cleanr, '', latest.summary)
-            
-            msg = get_ai_translation(f"{latest.title}\n{clean_summary}", style="news")
-            final_msg = f"🔔 [TEST RUN] GSM News Update\n\n{msg}\n\n🔗 {latest.link}"
-            
-            for chat_id in subscribers:
-                try: bot.send_message(chat_id, final_msg)
-                except: pass
-            
-            save_file_content(STATE_FILE, latest.link)
-    except Exception as e:
-        print(f"GSM Error: {e}")
-
-# --- Mission 2: Facebook Page ---
-def check_facebook_page(subscribers):
-    print("Checking Facebook...")
-    try:
-        feed = feedparser.parse(FB_RSS_URL)
-        if not feed.entries: return
-        latest = feed.entries[0]
-        
-        # TEST MODE: Link တူလည်း ဇွတ်ပို့ခိုင်းထားသည် (if True)
-        if True:
-            cleanr = re.compile('<.*?>')
-            clean_summary = re.sub(cleanr, '', latest.summary)
-            
-            msg = get_ai_translation(f"{latest.title}\n{clean_summary}", style="facebook")
-            final_msg = f"📘 [TEST RUN] Ton Mobile Update\n\n{msg}\n\n🔗 Link: {latest.link}"
-            
-            for chat_id in subscribers:
-                try: bot.send_message(chat_id, final_msg)
-                except: pass
-            
-            save_file_content(FB_STATE_FILE, latest.link)
+                print(f"⚠️ Response format unexpected: {data}")
+        else:
+            print(f"❌ Generation Failed with {target_model}: {response.status_code}")
+            print(f"Response: {response.text}")
             
     except Exception as e:
-        print(f"Facebook RSS Error: {e}")
+        print(f"❌ Test Error: {e}")
+
+    print("--- 🤖 DIAGNOSTIC END ---")
 
 if __name__ == "__main__":
-    subs = check_new_subscribers()
-    check_gsm_arena(subs)
-    check_facebook_page(subs)
+    test_ai_connection()
