@@ -4,38 +4,21 @@ import feedparser
 import requests
 import json
 import re
-from facebook_scraper import get_posts
+
+# Facebook Scraper မလိုတော့ပါ
 
 bot = telebot.TeleBot(os.environ["TELEGRAM_TOKEN"])
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 
+# RSS Link အသစ် (သင်ပေးလိုက်သော Link)
+FB_RSS_URL = "https://fetchrss.com/feed/1vYTK6GaV7wB1vYTHS9igFgw.rss"
+GSM_RSS_URL = "https://www.gsmarena.com/rss-news-reviews.php3"
+
 STATE_FILE = "last_link.txt"
 FB_STATE_FILE = "last_fb_id.txt"
 SUBS_FILE = "subscribers.txt"
-COOKIES_FILE = "fb_cookies.txt" 
 
 # --- Helper Functions ---
-def setup_cookies():
-    # Cookie များကို ပြန်လည်ပြုပြင်ခြင်း (Tabs များ ပျောက်နေလျှင် ပြန်ထည့်မည်)
-    raw_data = os.environ.get("FB_COOKIES", "")
-    if raw_data:
-        # Space များနေလျှင် Tab သို့ ပြောင်းမည် (Netscape format ဝင်အောင်)
-        fixed_data = ""
-        for line in raw_data.splitlines():
-            if line.strip() and not line.startswith("#"):
-                parts = line.split()
-                if len(parts) >= 7:
-                    fixed_data += "\t".join(parts) + "\n"
-                else:
-                    fixed_data += line + "\n"
-            else:
-                fixed_data += line + "\n"
-        
-        with open(COOKIES_FILE, "w") as f:
-            f.write(fixed_data)
-        return COOKIES_FILE
-    return None
-
 def get_file_content(filename):
     if os.path.exists(filename):
         with open(filename, "r") as f:
@@ -110,18 +93,19 @@ def get_ai_translation(text, style="news"):
         pass
     return "AI ဘာသာပြန်မရပါ (Original Text ကို ဖတ်ရှုပါ)"
 
-# --- Mission 1: GSM Arena ---
+# --- Mission 1: GSM Arena (RSS) ---
 def check_gsm_arena(subscribers):
     print("Checking GSM Arena...")
     try:
-        feed = feedparser.parse("https://www.gsmarena.com/rss-news-reviews.php3")
+        feed = feedparser.parse(GSM_RSS_URL)
         if not feed.entries: return
         latest = feed.entries[0]
         
-        cleanr = re.compile('<.*?>')
-        clean_summary = re.sub(cleanr, '', latest.summary)
-        
         if latest.link != get_file_content(STATE_FILE):
+            # HTML Tags များကို ရှင်းထုတ်ခြင်း
+            cleanr = re.compile('<.*?>')
+            clean_summary = re.sub(cleanr, '', latest.summary)
+            
             msg = get_ai_translation(f"{latest.title}\n{clean_summary}", style="news")
             final_msg = f"🔔 GSM News Update\n\n{msg}\n\n🔗 {latest.link}"
             
@@ -133,43 +117,39 @@ def check_gsm_arena(subscribers):
     except Exception as e:
         print(f"GSM Error: {e}")
 
-# --- Mission 2: Facebook Page (mbasic mode) ---
+# --- Mission 2: Facebook Page (RSS Method) ---
 def check_facebook_page(subscribers):
-    print("Checking Facebook (mbasic mode)...")
-    page_name = 'TONMOBILEBANGKOK'
-    cookies_path = setup_cookies()
-    found_any = False
-    
+    print("Checking Facebook (FetchRSS)...")
     try:
-        # base_url ကို mbasic သို့ ပြောင်းပြီး ရှာခိုင်းခြင်း
-        for post in get_posts(page_name, pages=3, cookies=cookies_path, base_url="https://mbasic.facebook.com"):
-            found_any = True
-            post_id = str(post['post_id'])
-            text = post.get('text', '')
-            post_url = post.get('post_url', f"https://www.facebook.com/{post_id}")
+        feed = feedparser.parse(FB_RSS_URL)
+        if not feed.entries: 
+            print("No entries found in Facebook RSS.")
+            return
             
-            print(f"Found post: {post_id}")
-
-            if post_id != get_file_content(FB_STATE_FILE):
-                if text:
-                    print("New FB Post found! Sending...")
-                    msg = get_ai_translation(text, style="facebook")
-                    final_msg = f"📘 **Ton Mobile Update**\n\n{msg}\n\n🔗 Link: {post_url}"
-                    
-                    for chat_id in subscribers:
-                        try: bot.send_message(chat_id, final_msg)
-                        except: pass
-                
-                save_file_content(FB_STATE_FILE, post_id)
-            else:
-                print("Old post. Skipping.")
-            break 
+        latest = feed.entries[0]
         
-        if not found_any:
-            print("No posts found via mbasic.")
-
+        # Link အသစ်ဖြစ်မှ ပို့မယ်
+        if latest.link != get_file_content(FB_STATE_FILE):
+            print("New Facebook Post found!")
+            
+            # HTML Tags များကို ရှင်းထုတ်ခြင်း
+            cleanr = re.compile('<.*?>')
+            clean_summary = re.sub(cleanr, '', latest.summary)
+            
+            # AI ကို ဘာသာပြန်ခိုင်းမယ်
+            msg = get_ai_translation(f"{latest.title}\n{clean_summary}", style="facebook")
+            final_msg = f"📘 **Ton Mobile Update**\n\n{msg}\n\n🔗 Link: {latest.link}"
+            
+            for chat_id in subscribers:
+                try: bot.send_message(chat_id, final_msg)
+                except: pass
+            
+            save_file_content(FB_STATE_FILE, latest.link)
+        else:
+            print("No new Facebook posts.")
+            
     except Exception as e:
-        print(f"Facebook Error: {e}")
+        print(f"Facebook RSS Error: {e}")
 
 if __name__ == "__main__":
     subs = check_new_subscribers()
