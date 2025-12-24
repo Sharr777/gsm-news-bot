@@ -4,9 +4,9 @@ import feedparser
 import requests
 import json
 import re
+import time
 
 bot = telebot.TeleBot(os.environ["TELEGRAM_TOKEN"])
-# API Key မရှိရင် အလွတ်ထားမည် (Error မတက်အောင်)
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
 # RSS Links
@@ -65,37 +65,38 @@ def check_new_subscribers():
 def get_ai_translation(text, style="news"):
     clean_key = GEMINI_API_KEY.strip()
     if not clean_key:
-        return "AI Key Missing (Check GitHub Secrets)"
+        return "AI Key Missing"
 
     if style == "facebook":
-        prompt = (
-            "Task: Summarize this Mobile Phone Shop's Facebook Post into Burmese. "
-            "Style: Sales Manager looking at competitor's price. "
-            "Requirement: Highlight the phone model and price clearly. "
-            f"Post Content: {text}"
-        )
+        prompt = f"Summarize this Phone Shop Post in Burmese (Highlight model & price): {text}"
     else:
-        prompt = (
-            "Task: Translate tech news into Burmese. "
-            "Style: Professional Reporter. "
-            f"Content: {text}"
-        )
+        prompt = f"Translate tech news to Burmese (Professional style): {text}"
 
-    # ပြင်ဆင်ချက်: Model နာမည်ကို '-001' ထည့်ပြီး အတိအကျခေါ်သည်
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-001:generateContent?key={clean_key}"
-    headers = {'Content-Type': 'application/json'}
-    payload = {"contents": [{"parts": [{"text": prompt}]}]}
-    
-    try:
-        response = requests.post(url, headers=headers, data=json.dumps(payload))
-        data = response.json()
-        if 'candidates' in data:
-            return data['candidates'][0]['content']['parts'][0]['text']
-        else:
-            print(f"AI Error Response: {data}") # Log မှာကြည့်ဖို့
-    except Exception as e:
-        print(f"AI Connection Error: {e}")
-        pass
+    # Model (၃) မျိုးကို တစ်ခုပြီးတစ်ခု စမ်းမည်
+    models_to_try = [
+        "gemini-1.5-flash",       # အမြန်ဆုံး
+        "gemini-1.5-flash-001",   # ဒုတိယ အမြန်ဆုံး
+        "gemini-pro"              # အတည်ငြိမ်ဆုံး (Old version)
+    ]
+
+    for model_name in models_to_try:
+        # v1beta နဲ့ v1 နှစ်မျိုးလုံး စမ်းမည်
+        for version in ["v1beta", "v1"]:
+            url = f"https://generativelanguage.googleapis.com/{version}/models/{model_name}:generateContent?key={clean_key}"
+            headers = {'Content-Type': 'application/json'}
+            payload = {"contents": [{"parts": [{"text": prompt}]}]}
+            
+            try:
+                # print(f"Trying AI Model: {model_name} ({version})...") 
+                response = requests.post(url, headers=headers, data=json.dumps(payload))
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    if 'candidates' in data:
+                        return data['candidates'][0]['content']['parts'][0]['text']
+            except:
+                pass
+            
     return "AI ဘာသာပြန်မရပါ (Original Text ကို ဖတ်ရှုပါ)"
 
 # --- Mission 1: GSM Arena (RSS) ---
