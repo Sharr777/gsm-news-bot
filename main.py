@@ -5,12 +5,10 @@ import requests
 import json
 import re
 
-# Facebook Scraper မလိုတော့ပါ
-
 bot = telebot.TeleBot(os.environ["TELEGRAM_TOKEN"])
-GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
-# RSS Link အသစ် (သင်ပေးလိုက်သော Link)
+# RSS Links
 FB_RSS_URL = "https://fetchrss.com/feed/1vYTK6GaV7wB1vYTHS9igFgw.rss"
 GSM_RSS_URL = "https://www.gsmarena.com/rss-news-reviews.php3"
 
@@ -65,7 +63,10 @@ def check_new_subscribers():
 
 def get_ai_translation(text, style="news"):
     clean_key = GEMINI_API_KEY.strip()
-    
+    if not clean_key:
+        print("❌ DEBUG: API Key is MISSING in Python environment!")
+        return "AI Key Missing (Check Workflow)"
+
     if style == "facebook":
         prompt = (
             "Task: Summarize this Mobile Phone Shop's Facebook Post into Burmese. "
@@ -86,10 +87,18 @@ def get_ai_translation(text, style="news"):
     
     try:
         response = requests.post(url, headers=headers, data=json.dumps(payload))
+        
+        # Error စစ်ဆေးခြင်း
+        if response.status_code != 200:
+            print(f"❌ AI API ERROR: {response.status_code}")
+            print(f"Response: {response.text}")
+            return f"AI Error: {response.status_code} (Check Log)"
+
         data = response.json()
         if 'candidates' in data:
             return data['candidates'][0]['content']['parts'][0]['text']
-    except:
+    except Exception as e:
+        print(f"❌ PYTHON EXCEPTION: {e}")
         pass
     return "AI ဘာသာပြန်မရပါ (Original Text ကို ဖတ်ရှုပါ)"
 
@@ -101,12 +110,15 @@ def check_gsm_arena(subscribers):
         if not feed.entries: return
         latest = feed.entries[0]
         
-        if latest.link != get_file_content(STATE_FILE):
-            # HTML Tags များကို ရှင်းထုတ်ခြင်း
+        # TEST MODE: Link တူလည်း ဇွတ်ပို့ခိုင်းမည် (Debug ရန်)
+        # if latest.link != get_file_content(STATE_FILE): 
+        if True: # Always runs for testing
             cleanr = re.compile('<.*?>')
             clean_summary = re.sub(cleanr, '', latest.summary)
             
+            print(f"Attempting to translate: {latest.title}")
             msg = get_ai_translation(f"{latest.title}\n{clean_summary}", style="news")
+            
             final_msg = f"🔔 GSM News Update\n\n{msg}\n\n🔗 {latest.link}"
             
             for chat_id in subscribers:
@@ -114,6 +126,7 @@ def check_gsm_arena(subscribers):
                 except: pass
             
             save_file_content(STATE_FILE, latest.link)
+            return # တစ်ခါလုပ်ပြီး ရပ်မယ် (Loop မပတ်စေရန်)
     except Exception as e:
         print(f"GSM Error: {e}")
 
@@ -122,22 +135,18 @@ def check_facebook_page(subscribers):
     print("Checking Facebook (FetchRSS)...")
     try:
         feed = feedparser.parse(FB_RSS_URL)
-        if not feed.entries: 
-            print("No entries found in Facebook RSS.")
-            return
-            
+        if not feed.entries: return
         latest = feed.entries[0]
         
-        # Link အသစ်ဖြစ်မှ ပို့မယ်
-        if latest.link != get_file_content(FB_STATE_FILE):
-            print("New Facebook Post found!")
-            
-            # HTML Tags များကို ရှင်းထုတ်ခြင်း
+        # TEST MODE: Link တူလည်း ဇွတ်ပို့ခိုင်းမည် (Debug ရန်)
+        # if latest.link != get_file_content(FB_STATE_FILE):
+        if True: # Always runs for testing
             cleanr = re.compile('<.*?>')
             clean_summary = re.sub(cleanr, '', latest.summary)
             
-            # AI ကို ဘာသာပြန်ခိုင်းမယ်
+            print(f"Attempting to translate FB Post...")
             msg = get_ai_translation(f"{latest.title}\n{clean_summary}", style="facebook")
+            
             final_msg = f"📘 **Ton Mobile Update**\n\n{msg}\n\n🔗 Link: {latest.link}"
             
             for chat_id in subscribers:
@@ -145,13 +154,13 @@ def check_facebook_page(subscribers):
                 except: pass
             
             save_file_content(FB_STATE_FILE, latest.link)
-        else:
-            print("No new Facebook posts.")
+            return # တစ်ခါလုပ်ပြီး ရပ်မယ်
             
     except Exception as e:
         print(f"Facebook RSS Error: {e}")
 
 if __name__ == "__main__":
     subs = check_new_subscribers()
-    check_gsm_arena(subs)
-    check_facebook_page(subs)
+    # တစ်ခုချင်းစီ စမ်းမည်
+    check_gsm_arena(subs) 
+    # check_facebook_page(subs)
