@@ -68,28 +68,21 @@ def get_ai_translation(text, style="news"):
         return "AI Key Missing"
 
     if style == "facebook":
-        prompt = f"Summarize this Phone Shop Post in Burmese (Highlight model & price): {text}"
+        prompt = f"Summarize this Phone Shop Post in Burmese (Highlight model & price). Keep it short: {text}"
     else:
-        prompt = f"Translate tech news to Burmese (Professional style): {text}"
+        prompt = f"Translate tech news to Burmese (Professional style). Keep it short: {text}"
 
-    # Model (၃) မျိုးကို တစ်ခုပြီးတစ်ခု စမ်းမည်
-    models_to_try = [
-        "gemini-1.5-flash",       # အမြန်ဆုံး
-        "gemini-1.5-flash-001",   # ဒုတိယ အမြန်ဆုံး
-        "gemini-pro"              # အတည်ငြိမ်ဆုံး (Old version)
-    ]
+    # Model မျိုးစုံကို လှည့်ပတ်စမ်းသပ်မည့် စနစ်
+    models_to_try = ["gemini-1.5-flash", "gemini-1.5-flash-001", "gemini-pro"]
 
     for model_name in models_to_try:
-        # v1beta နဲ့ v1 နှစ်မျိုးလုံး စမ်းမည်
         for version in ["v1beta", "v1"]:
             url = f"https://generativelanguage.googleapis.com/{version}/models/{model_name}:generateContent?key={clean_key}"
             headers = {'Content-Type': 'application/json'}
             payload = {"contents": [{"parts": [{"text": prompt}]}]}
             
             try:
-                # print(f"Trying AI Model: {model_name} ({version})...") 
                 response = requests.post(url, headers=headers, data=json.dumps(payload))
-                
                 if response.status_code == 200:
                     data = response.json()
                     if 'candidates' in data:
@@ -99,7 +92,7 @@ def get_ai_translation(text, style="news"):
             
     return "AI ဘာသာပြန်မရပါ (Original Text ကို ဖတ်ရှုပါ)"
 
-# --- Mission 1: GSM Arena (RSS) ---
+# --- Mission 1: GSM Arena ---
 def check_gsm_arena(subscribers):
     print("Checking GSM Arena...")
     try:
@@ -107,13 +100,13 @@ def check_gsm_arena(subscribers):
         if not feed.entries: return
         latest = feed.entries[0]
         
-        # Link အသစ်ဖြစ်မှ ပို့မည်
-        if latest.link != get_file_content(STATE_FILE):
+        # TEST MODE: Link တူလည်း ဇွတ်ပို့ခိုင်းထားသည် (if True)
+        if True: 
             cleanr = re.compile('<.*?>')
             clean_summary = re.sub(cleanr, '', latest.summary)
             
             msg = get_ai_translation(f"{latest.title}\n{clean_summary}", style="news")
-            final_msg = f"🔔 GSM News Update\n\n{msg}\n\n🔗 {latest.link}"
+            final_msg = f"🔔 [TEST RUN] GSM News Update\n\n{msg}\n\n🔗 {latest.link}"
             
             for chat_id in subscribers:
                 try: bot.send_message(chat_id, final_msg)
@@ -123,21 +116,21 @@ def check_gsm_arena(subscribers):
     except Exception as e:
         print(f"GSM Error: {e}")
 
-# --- Mission 2: Facebook Page (RSS Method) ---
+# --- Mission 2: Facebook Page ---
 def check_facebook_page(subscribers):
-    print("Checking Facebook (FetchRSS)...")
+    print("Checking Facebook...")
     try:
         feed = feedparser.parse(FB_RSS_URL)
         if not feed.entries: return
         latest = feed.entries[0]
         
-        # Link အသစ်ဖြစ်မှ ပို့မည်
-        if latest.link != get_file_content(FB_STATE_FILE):
+        # TEST MODE: Link တူလည်း ဇွတ်ပို့ခိုင်းထားသည် (if True)
+        if True:
             cleanr = re.compile('<.*?>')
             clean_summary = re.sub(cleanr, '', latest.summary)
             
             msg = get_ai_translation(f"{latest.title}\n{clean_summary}", style="facebook")
-            final_msg = f"📘 **Ton Mobile Update**\n\n{msg}\n\n🔗 Link: {latest.link}"
+            final_msg = f"📘 [TEST RUN] Ton Mobile Update\n\n{msg}\n\n🔗 Link: {latest.link}"
             
             for chat_id in subscribers:
                 try: bot.send_message(chat_id, final_msg)
