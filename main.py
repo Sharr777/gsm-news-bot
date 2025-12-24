@@ -6,6 +6,7 @@ import json
 import re
 
 bot = telebot.TeleBot(os.environ["TELEGRAM_TOKEN"])
+# API Key မရှိရင် အလွတ်ထားမည် (Error မတက်အောင်)
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
 # RSS Links
@@ -64,8 +65,7 @@ def check_new_subscribers():
 def get_ai_translation(text, style="news"):
     clean_key = GEMINI_API_KEY.strip()
     if not clean_key:
-        print("❌ DEBUG: API Key is MISSING in Python environment!")
-        return "AI Key Missing (Check Workflow)"
+        return "AI Key Missing (Check GitHub Secrets)"
 
     if style == "facebook":
         prompt = (
@@ -81,24 +81,20 @@ def get_ai_translation(text, style="news"):
             f"Content: {text}"
         )
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={clean_key}"
+    # ပြင်ဆင်ချက်: Model နာမည်ကို '-001' ထည့်ပြီး အတိအကျခေါ်သည်
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-001:generateContent?key={clean_key}"
     headers = {'Content-Type': 'application/json'}
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
     
     try:
         response = requests.post(url, headers=headers, data=json.dumps(payload))
-        
-        # Error စစ်ဆေးခြင်း
-        if response.status_code != 200:
-            print(f"❌ AI API ERROR: {response.status_code}")
-            print(f"Response: {response.text}")
-            return f"AI Error: {response.status_code} (Check Log)"
-
         data = response.json()
         if 'candidates' in data:
             return data['candidates'][0]['content']['parts'][0]['text']
+        else:
+            print(f"AI Error Response: {data}") # Log မှာကြည့်ဖို့
     except Exception as e:
-        print(f"❌ PYTHON EXCEPTION: {e}")
+        print(f"AI Connection Error: {e}")
         pass
     return "AI ဘာသာပြန်မရပါ (Original Text ကို ဖတ်ရှုပါ)"
 
@@ -110,15 +106,12 @@ def check_gsm_arena(subscribers):
         if not feed.entries: return
         latest = feed.entries[0]
         
-        # TEST MODE: Link တူလည်း ဇွတ်ပို့ခိုင်းမည် (Debug ရန်)
-        # if latest.link != get_file_content(STATE_FILE): 
-        if True: # Always runs for testing
+        # Link အသစ်ဖြစ်မှ ပို့မည်
+        if latest.link != get_file_content(STATE_FILE):
             cleanr = re.compile('<.*?>')
             clean_summary = re.sub(cleanr, '', latest.summary)
             
-            print(f"Attempting to translate: {latest.title}")
             msg = get_ai_translation(f"{latest.title}\n{clean_summary}", style="news")
-            
             final_msg = f"🔔 GSM News Update\n\n{msg}\n\n🔗 {latest.link}"
             
             for chat_id in subscribers:
@@ -126,7 +119,6 @@ def check_gsm_arena(subscribers):
                 except: pass
             
             save_file_content(STATE_FILE, latest.link)
-            return # တစ်ခါလုပ်ပြီး ရပ်မယ် (Loop မပတ်စေရန်)
     except Exception as e:
         print(f"GSM Error: {e}")
 
@@ -138,15 +130,12 @@ def check_facebook_page(subscribers):
         if not feed.entries: return
         latest = feed.entries[0]
         
-        # TEST MODE: Link တူလည်း ဇွတ်ပို့ခိုင်းမည် (Debug ရန်)
-        # if latest.link != get_file_content(FB_STATE_FILE):
-        if True: # Always runs for testing
+        # Link အသစ်ဖြစ်မှ ပို့မည်
+        if latest.link != get_file_content(FB_STATE_FILE):
             cleanr = re.compile('<.*?>')
             clean_summary = re.sub(cleanr, '', latest.summary)
             
-            print(f"Attempting to translate FB Post...")
             msg = get_ai_translation(f"{latest.title}\n{clean_summary}", style="facebook")
-            
             final_msg = f"📘 **Ton Mobile Update**\n\n{msg}\n\n🔗 Link: {latest.link}"
             
             for chat_id in subscribers:
@@ -154,13 +143,11 @@ def check_facebook_page(subscribers):
                 except: pass
             
             save_file_content(FB_STATE_FILE, latest.link)
-            return # တစ်ခါလုပ်ပြီး ရပ်မယ်
             
     except Exception as e:
         print(f"Facebook RSS Error: {e}")
 
 if __name__ == "__main__":
     subs = check_new_subscribers()
-    # တစ်ခုချင်းစီ စမ်းမည်
-    check_gsm_arena(subs) 
-    # check_facebook_page(subs)
+    check_gsm_arena(subs)
+    check_facebook_page(subs)
