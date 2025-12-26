@@ -1,13 +1,15 @@
-name: GSM News Bot
+name: News Bot Workflow
 
 on:
   schedule:
-    - cron: '*/30 * * * *'
+    - cron: '0 * * * *'  # ၁ နာရီ ၁ ခါ Run မည် (အရမ်းမကြာခဏ မပို့စေရန်)
   workflow_dispatch:
 
 jobs:
   run_bot:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Bot ကို ဖိုင်ရေးခွင့်ပေးသည့် အမိန့်
 
     steps:
     - name: Checkout code
@@ -21,19 +23,19 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        pip install pyTelegramBotAPI feedparser requests
 
     - name: Run Bot Script
       env:
         TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        MY_CHAT_ID: ${{ secrets.MY_CHAT_ID }}
-        FB_COOKIES: ${{ secrets.FB_COOKIES }}
       run: python main.py
 
     - name: Commit and Push if changed
       run: |
         git config --global user.name 'NewsBot'
         git config --global user.email 'bot@noreply.github.com'
-        git add last_link.txt subscribers.txt last_fb_id.txt
-        git diff --quiet && git diff --staged --quiet || (git commit -m "Update data" && git push)
+        # ဖိုင်အားလုံးကို Force သိမ်းမည်
+        git add -A
+        # ပြောင်းလဲမှုရှိမှ Commit လုပ်မည်၊ မရှိရင် ကျော်သွားမည်
+        git diff --quiet && git diff --staged --quiet || (git commit -m "Update memory files" && git push)
