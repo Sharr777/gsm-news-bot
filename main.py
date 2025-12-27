@@ -5,11 +5,11 @@ import requests
 import json
 import re
 
+# --- Configuration ---
 bot = telebot.TeleBot(os.environ["TELEGRAM_TOKEN"])
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
-# RSS Links
-# (ပုံထဲက Link အတိုင်း အတိအကျ ထည့်ပေးထားပါတယ်)
+# RSS Links (သင့် Link အမှန်များ)
 FB_RSS_URL = "https://fetchrss.com/feed/1vYTK6GaV7wB1vYTHS9igFgw.rss"
 GSM_RSS_URL = "https://www.gsmarena.com/rss-news-reviews.php3"
 
@@ -35,11 +35,44 @@ def get_subscribers():
             return set(line.strip() for line in f if line.strip())
     return set()
 
+def save_subscribers(subs):
+    with open(SUBS_FILE, "w") as f:
+        for sub in subs:
+            f.write(f"{sub}\n")
+
+def check_new_subscribers():
+    subs = get_subscribers()
+    updated = False
+    try:
+        updates = bot.get_updates()
+        for update in updates:
+            if update.message and update.message.text == "/start":
+                chat_id = str(update.message.chat.id)
+                if chat_id not in subs:
+                    subs.add(chat_id)
+                    updated = True
+                    try:
+                        bot.send_message(chat_id, "မင်္ဂလာပါ! News Bot မှ ကြိုဆိုပါတယ်။")
+                    except:
+                        pass
+        if updates:
+            bot.get_updates(offset=updates[-1].update_id + 1)
+        if updated:
+            save_subscribers(subs)
+    except Exception as e:
+        print(f"Subscriber check error: {e}")
+    return subs
+
 def get_ai_translation(text, style="facebook"):
     clean_key = GEMINI_API_KEY.strip()
     if not clean_key: return "AI Key Missing"
     
-    prompt = f"Summarize this Phone Shop Post in Burmese (Highlight model & price). Keep it short: {text}"
+    if style == "facebook":
+        prompt = f"Summarize this Phone Shop Post in Burmese (Highlight model & price). Keep it short: {text}"
+    else:
+        prompt = f"Translate tech news to Burmese (Professional style). Keep it short: {text}"
+
+    # Model Name (Confirmed Working)
     model_name = "gemini-2.5-flash"
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={clean_key}"
@@ -52,41 +85,67 @@ def get_ai_translation(text, style="facebook"):
             data = response.json()
             if 'candidates' in data:
                 return data['candidates'][0]['content']['parts'][0]['text']
-    except:
-        pass
+    except Exception as e:
+        print(f"AI Connection Error: {e}")
+            
     return "AI ဘာသာပြန်မရပါ (Original Text ကို ဖတ်ရှုပါ)"
 
-# --- Facebook Check (Force Mode) ---
+# --- Mission 1: GSM Arena ---
+def check_gsm_arena(subscribers):
+    print("Checking GSM Arena...")
+    try:
+        feed = feedparser.parse(GSM_RSS_URL)
+        if not feed.entries: return
+        latest = feed.entries[0]
+        
+        # Link အသစ်ဖြစ်မှ ပို့မည် (Normal Mode)
+        if latest.link != get_file_content(STATE_FILE):
+            cleanr = re.compile('<.*?>')
+            clean_summary = re.sub(cleanr, '', latest.summary)
+            
+            msg = get_ai_translation(f"{latest.title}\n{clean_summary}", style="news")
+            final_msg = f"🔔 GSM News Update\n\n{msg}\n\n🔗 {latest.link}"
+            
+            for chat_id in subscribers:
+                try: bot.send_message(chat_id, final_msg)
+                except: pass
+            
+            save_file_content(STATE_FILE, latest.link)
+    except Exception as e:
+        print(f"GSM Error: {e}")
+
+# --- Mission 2: Facebook Page ---
 def check_facebook_page(subscribers):
-    print("Checking Facebook Feed...")
+    print("Checking Facebook (FetchRSS)...")
     try:
         feed = feedparser.parse(FB_RSS_URL)
-        if not feed.entries: 
-            print("No entries found!")
-            return
-            
+        if not feed.entries: return
         latest = feed.entries[0]
-        print(f"Found Post: {latest.title}")
         
-        # ပြင်ဆင်ချက်: အရင်က ပို့ပြီးလား မစစ်တော့ဘူး (Link ကောင်းမကောင်း စမ်းဖို့ ဇွတ်ပို့မည်)
-        # if latest.link != get_file_content(FB_STATE_FILE): 
-        if True: 
+        # Link အသစ်ဖြစ်မှ ပို့မည် (Normal Mode)
+        if latest.link != get_file_content(FB_STATE_FILE):
+            print(f"New FB Post Found: {latest.title}")
             cleanr = re.compile('<.*?>')
             clean_summary = re.sub(cleanr, '', latest.summary)
             
             msg = get_ai_translation(f"{latest.title}\n{clean_summary}", style="facebook")
-            final_msg = f"📘 **Facebook Update (Test)**\n\n{msg}\n\n🔗 Link: {latest.link}"
+            final_msg = f"📘 **Ton Mobile Update**\n\n{msg}\n\n🔗 Link: {latest.link}"
             
             for chat_id in subscribers:
                 try: bot.send_message(chat_id, final_msg)
-                except Exception as e: print(f"Send Error: {e}")
+                except: pass
             
-            # Save ထားလိုက်မယ် (နောက်တစ်ခါကျရင် ပုံမှန်အတိုင်းပြန်ဖြစ်သွားအောင်)
             save_file_content(FB_STATE_FILE, latest.link)
+        else:
+            print("No new Facebook posts.")
             
     except Exception as e:
         print(f"Facebook RSS Error: {e}")
 
 if __name__ == "__main__":
-    subs = get_subscribers() # ရိုးရှင်းအောင် လောလောဆယ် Subscriber အသစ်မစစ်တော့ဘူး
+    # ၁။ Subscriber အသစ်စစ်မည်
+    subs = check_new_subscribers()
+    # ၂။ GSM သတင်းစစ်မည်
+    check_gsm_arena(subs)
+    # ၃။ Facebook သတင်းစစ်မည်
     check_facebook_page(subs)
