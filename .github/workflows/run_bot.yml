@@ -2,7 +2,7 @@ name: News Bot Workflow
 
 on:
   schedule:
-    - cron: '0 * * * *'  # ၁ နာရီ ၁ ခါ Run မည် (အရမ်းမကြာခဏ မပို့စေရန်)
+    - cron: '*/30 * * * *'  # မိနစ် ၃၀ တိုင်း Run မည်
   workflow_dispatch:
 
 jobs:
