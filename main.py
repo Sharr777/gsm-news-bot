@@ -1,11 +1,13 @@
-# main.py - Version 3.0 (All Posts Guarantee)
 import os
 import telebot
 import feedparser
 import requests
 import json
 import re
+import time
+from bs4 import BeautifulSoup # Import များကို ထိပ်ဆုံးတွင် စုစည်းထားပါသည်
 
+# --- Configuration ---
 bot = telebot.TeleBot(os.environ["TELEGRAM_TOKEN"])
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
@@ -18,7 +20,16 @@ STATE_FILE = "last_link_v2.txt"
 FB_STATE_FILE = "last_fb_id_v2.txt"
 SUBS_FILE = "subscribers.txt"
 
-# --- Helper Functions (Same as before) ---
+# Mission 3: Price Tracking Config
+TRACKING_ITEMS = [
+    {
+        "name": "Xiaomi Pad 7",
+        "url": "https://www.mi.com/th/product/xiaomi-pad-7/buy/?gid=4223714271",
+        "target_price": 8000
+    }
+]
+
+# --- Helper Functions ---
 def get_file_content(filename):
     if os.path.exists(filename):
         with open(filename, "r") as f:
@@ -57,9 +68,9 @@ def get_ai_translation(text, style="facebook"):
     except: pass
     return "AI ဘာသာပြန်မရပါ (Original Text ကို ဖတ်ရှုပါ)"
 
-# --- Facebook Function (Fixed Loop) ---
+# --- Mission 1: Facebook Function ---
 def check_facebook_page(subscribers):
-    print("Checking Facebook (FetchRSS)...")
+    print("--- Mission 1: Checking Facebook ---")
     try:
         feed = feedparser.parse(FB_RSS_URL)
         if not feed.entries: return
@@ -67,15 +78,13 @@ def check_facebook_page(subscribers):
         last_link = get_file_content(FB_STATE_FILE)
         new_posts = []
 
-        # ၁။ Post အသစ်တွေကို စုမည်
         for entry in feed.entries:
             if entry.link == last_link:
-                break # သိမ်းထားတဲ့ Link နဲ့တူရင် ရပ်မည်
+                break
             new_posts.append(entry)
 
-        # ၂။ ပြောင်းပြန်လှန်ပြီး (အဟောင်း -> အသစ်) ပို့မည်
         if new_posts:
-            print(f"Found {len(new_posts)} NEW posts to send.")
+            print(f"Found {len(new_posts)} NEW posts.")
             for entry in reversed(new_posts):
                 cleanr = re.compile('<.*?>')
                 clean_summary = re.sub(cleanr, '', entry.summary)
@@ -87,7 +96,6 @@ def check_facebook_page(subscribers):
                     try: bot.send_message(chat_id, final_msg)
                     except: pass
                 
-                # တစ်ခုပို့ပြီးတိုင်း Link ကို Save မည် (Crash ဖြစ်ရင်တောင် ကျန်တာမလွတ်အောင်)
                 save_file_content(FB_STATE_FILE, entry.link)
         else:
             print("No new Facebook posts.")
@@ -95,8 +103,9 @@ def check_facebook_page(subscribers):
     except Exception as e:
         print(f"Facebook RSS Error: {e}")
 
-# --- GSM Function ---
+# --- Mission 2: GSM Arena Function ---
 def check_gsm_arena(subscribers):
+    print("--- Mission 2: Checking GSM Arena ---")
     try:
         feed = feedparser.parse(GSM_RSS_URL)
         if not feed.entries: return
@@ -118,7 +127,63 @@ def check_gsm_arena(subscribers):
                 save_file_content(STATE_FILE, entry.link)
     except: pass
 
+# --- Mission 3: Price Tracker Function ---
+def run_mission_3_price_track(bot, subscribers):
+    print("--- Mission 3: Analyzing Xiaomi Pad 7 Price ---")
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    }
+
+    for item in TRACKING_ITEMS:
+        try:
+            response = requests.get(item['url'], headers=headers, timeout=15)
+            
+            if response.status_code == 200:
+                # Simulation Mode (လက်ရှိဈေးကို 9790 ဟု ယာယီသတ်မှတ်)
+                current_price = 9790 
+                
+                print(f"💰 {item['name']} Price: {current_price} THB (Target: {item['target_price']})")
+
+                if current_price <= item['target_price']:
+                    alert_msg = (
+                        f"🚨 <b>PRICE DROP ALERT!</b> 🚨\n\n"
+                        f"📦 <b>Item:</b> {item['name']}\n"
+                        f"📉 <b>Now:</b> {current_price} THB\n"
+                        f"🎯 <b>Target:</b> {item['target_price']} THB\n\n"
+                        f"👉 <b>Buy Now:</b> <a href='{item['url']}'>Click Here</a>"
+                    )
+                    # Subscribers အားလုံးကို ပို့မည်
+                    for chat_id in subscribers:
+                        try:
+                            bot.send_message(chat_id, alert_msg, parse_mode='HTML')
+                        except: pass
+                    print(f"✅ Alert Sent to subscribers!")
+                else:
+                    print(f"❌ Price is still high.")
+            else:
+                print(f"⚠️ Failed to connect. Status: {response.status_code}")
+
+        except Exception as e:
+            print(f"⚠️ Error in Mission 3: {e}")
+
+# ==========================================
+# MAIN EXECUTION LOOP
+# ==========================================
 if __name__ == "__main__":
-    subs = get_subscribers() # Subscriber အသစ်စစ်တာ ခဏပိတ်ထား (မြန်အောင်လို့)
-    check_gsm_arena(subs)
-    check_facebook_page(subs)
+    print("🤖 Bot Started...")
+    
+    # Bot ကို အမြဲတမ်း Run နေစေရန် Loop ပတ်ထားခြင်း
+    while True:
+        # Subscribers စာရင်းကို Loop ပတ်တိုင်း အသစ်ပြန်ယူမည်
+        subs = get_subscribers()
+        
+        if not subs:
+            print("No subscribers found. Waiting...")
+        else:
+            # Mission 1, 2, 3 ကို တစ်လှည့်စီ Run မည်
+            check_gsm_arena(subs)
+            check_facebook_page(subs)
+            run_mission_3_price_track(bot, subs)
+        
+        print("💤 Waiting for 1 hour before next check...")
+        time.sleep(3600) # ၁ နာရီ (3600 စက္ကန့်) နားပြီးမှ ပြန်စစ်မည်
