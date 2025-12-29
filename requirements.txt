@@ -3,3 +3,4 @@ feedparser
 requests
 facebook-scraper
 lxml_html_clean
+beautifulsoup4
