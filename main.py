@@ -25,7 +25,7 @@ TRACKING_ITEMS = [
     {
         "name": "Xiaomi Pad 7",
         "url": "https://www.mi.com/th/product/xiaomi-pad-7/buy/?gid=4223714271",
-        "target_price": 8000
+        "target_price": 20000
     }
 ]
 
