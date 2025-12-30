@@ -9,6 +9,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    
+    # 👇 (၁) ဒီနေရာမှာ ခွင့်ပြုချက်တောင်းရပါတယ်
+    permissions:
+      contents: write
 
     steps:
     - name: Checkout code
@@ -29,3 +33,12 @@ jobs:
         TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       run: python main.py
+
+    # 👇 (၂) ဒီအပိုင်းက မှတ်တမ်းဖိုင်ကို Save လုပ်မယ့်အပိုင်းပါ (အရေးကြီးဆုံး)
+    - name: Save History (Commit & Push)
+      run: |
+        git config --global user.name "GitHub Actions Bot"
+        git config --global user.email "actions@github.com"
+        git add *.txt
+        git commit -m "Update tracking history" || echo "No changes to commit"
+        git push
