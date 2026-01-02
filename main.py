@@ -167,23 +167,21 @@ def run_mission_3_price_track(bot, subscribers):
             print(f"⚠️ Error in Mission 3: {e}")
 
 # ==========================================
-# MAIN EXECUTION LOOP
+# MAIN EXECUTION (NO LOOP)
 # ==========================================
 if __name__ == "__main__":
-    print("🤖 Bot Started...")
+    print("🤖 Bot Checking Updates...")
     
-    # Bot ကို အမြဲတမ်း Run နေစေရန် Loop ပတ်ထားခြင်း
-    while True:
-        # Subscribers စာရင်းကို Loop ပတ်တိုင်း အသစ်ပြန်ယူမည်
-        subs = get_subscribers()
-        
-        if not subs:
-            print("No subscribers found. Waiting...")
-        else:
-            # Mission 1, 2, 3 ကို တစ်လှည့်စီ Run မည်
-            check_gsm_arena(subs)
-            check_facebook_page(subs)
-            run_mission_3_price_track(bot, subs)
-        
-        print("💤 Waiting for 1 hour before next check...")
-        time.sleep(3600) # ၁ နာရီ (3600 စက္ကန့်) နားပြီးမှ ပြန်စစ်မည်
+    # ၁။ Subscribers စာရင်းရယူမယ်
+    subs = get_subscribers()
+    
+    if not subs:
+        print("No subscribers found.")
+    else:
+        # ၂။ Mission တွေကို တစ်ခေါက်ပဲ Run ခိုင်းမယ် (Loop မပတ်တော့ဘူး)
+        check_gsm_arena(subs)
+        check_facebook_page(subs)
+        run_mission_3_price_track(bot, subs)
+    
+    print("✅ Check Complete. Saving history & Exiting...")
+    # ပြီးရင် သူ့ဘာသာ အဆုံးသတ်သွားပါလိမ့်မယ်
