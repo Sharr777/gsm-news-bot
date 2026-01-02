@@ -5,7 +5,7 @@ import requests
 import json
 import re
 import time
-from bs4 import BeautifulSoup # Import များကို ထိပ်ဆုံးတွင် စုစည်းထားပါသည်
+from bs4 import BeautifulSoup 
 
 # --- Configuration ---
 bot = telebot.TeleBot(os.environ["TELEGRAM_TOKEN"])
@@ -50,22 +50,39 @@ def get_ai_translation(text, style="facebook"):
     clean_key = GEMINI_API_KEY.strip()
     if not clean_key: return "AI Key Missing"
     
+    # --- PROMPT ပြင်ဆင်ထားသည့်အပိုင်း ---
     if style == "facebook":
-        prompt = f"Summarize this Phone Shop Post in Burmese (Highlight model & price). Keep it short: {text}"
+        # ထိုင်းအရောင်း Post များကို ဘာသာပြန်ရန် သီးသန့် Prompt
+        prompt = (
+            "You are a helpful assistant for a Burmese phone shop manager. "
+            "Translate this Thai Facebook sales post into Burmese. "
+            "Focus strictly on: Phone Model, Price, and Condition (New/Second). "
+            "Ignore marketing fluff. Keep it short and professional. "
+            f"Input Text: {text}"
+        )
     else:
-        prompt = f"Translate tech news to Burmese (Professional style). Keep it short: {text}"
+        # သတင်းများအတွက် Prompt
+        prompt = f"Summarize this Tech News in Burmese. Focus on Specs and Price. Keep it short: {text}"
 
-    model_name = "gemini-2.5-flash"
+    # Model Name အမှန် (1.5-flash) သို့ ပြောင်းထားပါသည်
+    model_name = "gemini-1.5-flash"
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={clean_key}"
     headers = {'Content-Type': 'application/json'}
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
+    
     try:
         response = requests.post(url, headers=headers, data=json.dumps(payload))
         if response.status_code == 200:
             data = response.json()
-            if 'candidates' in data:
+            if 'candidates' in data and data['candidates']:
                 return data['candidates'][0]['content']['parts'][0]['text']
-    except: pass
+            else:
+                print(f"AI Safety Block or Empty: {data}") # Log for debugging
+        else:
+            print(f"AI Error {response.status_code}: {response.text}")
+    except Exception as e: 
+        print(f"AI Connection Error: {e}")
+        
     return "AI ဘာသာပြန်မရပါ (Original Text ကို ဖတ်ရှုပါ)"
 
 # --- Mission 1: Facebook Function ---
@@ -89,7 +106,10 @@ def check_facebook_page(subscribers):
                 cleanr = re.compile('<.*?>')
                 clean_summary = re.sub(cleanr, '', entry.summary)
                 
-                msg = get_ai_translation(f"{entry.title}\n{clean_summary}", style="facebook")
+                # Title နဲ့ Body ကို ပေါင်းထည့်မှ AI က အကြောင်းအရာပြည့်စုံစွာ သိမည်
+                full_text = f"{entry.title}\n{clean_summary}"
+                msg = get_ai_translation(full_text, style="facebook")
+                
                 final_msg = f"📘 **Ton Mobile Update**\n\n{msg}\n\n🔗 Link: {entry.link}"
                 
                 for chat_id in subscribers:
@@ -184,4 +204,3 @@ if __name__ == "__main__":
         run_mission_3_price_track(bot, subs)
     
     print("✅ Check Complete. Saving history & Exiting...")
-    # ပြီးရင် သူ့ဘာသာ အဆုံးသတ်သွားပါလိမ့်မယ်
