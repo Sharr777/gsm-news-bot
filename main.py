@@ -65,7 +65,7 @@ def get_ai_translation(text, style="facebook"):
         prompt = f"Summarize this Tech News in Burmese. Focus on Specs and Price. Keep it short: {text}"
 
     # Model Name အမှန် (1.5-flash) သို့ ပြောင်းထားပါသည်
-    model_name = "gemini-1.5-flash"
+    model_name = "gemini-1.5-flash-001"
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={clean_key}"
     headers = {'Content-Type': 'application/json'}
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
