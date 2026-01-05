@@ -16,8 +16,8 @@ FB_RSS_URL = "https://fetchrss.com/feed/1vYTK6GaV7wB1vYTHS9igFgw.rss"
 GSM_RSS_URL = "https://www.gsmarena.com/rss-news-reviews.php3"
 
 # Memory Files
-STATE_FILE = "last_link_v2.txt"
-FB_STATE_FILE = "last_fb_id_v2.txt"
+STATE_FILE = "last_link_v4.txt"
+FB_STATE_FILE = "last_fb_id_v4.txt"
 SUBS_FILE = "subscribers.txt"
 
 # Mission 3: Price Tracking Config
@@ -46,13 +46,15 @@ def get_subscribers():
             return set(line.strip() for line in f if line.strip())
     return set()
 
+# 👇 AI စမ်းသပ်မည့် Model စာရင်း (တစ်ခုမရ တစ်ခုပြောင်းသုံးမည်)
+AI_MODELS = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.0-pro"]
+
 def get_ai_translation(text, style="facebook"):
     clean_key = GEMINI_API_KEY.strip()
     if not clean_key: return "AI Key Missing"
     
-    # --- PROMPT ပြင်ဆင်ထားသည့်အပိုင်း ---
+    # Prompt Setup
     if style == "facebook":
-        # ထိုင်းအရောင်း Post များကို ဘာသာပြန်ရန် သီးသန့် Prompt
         prompt = (
             "You are a helpful assistant for a Burmese phone shop manager. "
             "Translate this Thai Facebook sales post into Burmese. "
@@ -61,29 +63,30 @@ def get_ai_translation(text, style="facebook"):
             f"Input Text: {text}"
         )
     else:
-        # သတင်းများအတွက် Prompt
         prompt = f"Summarize this Tech News in Burmese. Focus on Specs and Price. Keep it short: {text}"
 
-    # Model Name အမှန် (1.5-flash) သို့ ပြောင်းထားပါသည်
-    model_name = "gemini-pro"
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={clean_key}"
-    headers = {'Content-Type': 'application/json'}
-    payload = {"contents": [{"parts": [{"text": prompt}]}]}
-    
-    try:
-        response = requests.post(url, headers=headers, data=json.dumps(payload))
-        if response.status_code == 200:
-            data = response.json()
-            if 'candidates' in data and data['candidates']:
-                return data['candidates'][0]['content']['parts'][0]['text']
-            else:
-                print(f"AI Safety Block or Empty: {data}") # Log for debugging
-        else:
-            print(f"AI Error {response.status_code}: {response.text}")
-    except Exception as e: 
-        print(f"AI Connection Error: {e}")
+    # Model များကို တစ်ခုပြီးတစ်ခု လိုက်စမ်းမည်
+    for model_name in AI_MODELS:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={clean_key}"
+        headers = {'Content-Type': 'application/json'}
+        payload = {"contents": [{"parts": [{"text": prompt}]}]}
         
-    return "AI ဘာသာပြန်မရပါ (Original Text ကို ဖတ်ရှုပါ)"
+        try:
+            response = requests.post(url, headers=headers, data=json.dumps(payload))
+            if response.status_code == 200:
+                data = response.json()
+                if 'candidates' in data and data['candidates']:
+                    return data['candidates'][0]['content']['parts'][0]['text']
+            elif response.status_code == 404:
+                print(f"⚠️ Model {model_name} not found. Trying next...")
+                continue # နောက်တစ်ခု ဆက်စမ်းမယ်
+            else:
+                print(f"AI Error ({model_name}): {response.status_code}")
+                
+        except Exception as e: 
+            print(f"Connection Error: {e}")
+
+    return "AI ဘာသာပြန်မရပါ (All Models Failed)"
 
 # --- Mission 1: Facebook Function ---
 def check_facebook_page(subscribers):
@@ -106,7 +109,6 @@ def check_facebook_page(subscribers):
                 cleanr = re.compile('<.*?>')
                 clean_summary = re.sub(cleanr, '', entry.summary)
                 
-                # Title နဲ့ Body ကို ပေါင်းထည့်မှ AI က အကြောင်းအရာပြည့်စုံစွာ သိမည်
                 full_text = f"{entry.title}\n{clean_summary}"
                 msg = get_ai_translation(full_text, style="facebook")
                 
@@ -159,8 +161,7 @@ def run_mission_3_price_track(bot, subscribers):
             response = requests.get(item['url'], headers=headers, timeout=15)
             
             if response.status_code == 200:
-                # Simulation Mode (လက်ရှိဈေးကို 9790 ဟု ယာယီသတ်မှတ်)
-                current_price = 9790 
+                current_price = 9790 # Simulation Mode
                 
                 print(f"💰 {item['name']} Price: {current_price} THB (Target: {item['target_price']})")
 
@@ -172,12 +173,10 @@ def run_mission_3_price_track(bot, subscribers):
                         f"🎯 <b>Target:</b> {item['target_price']} THB\n\n"
                         f"👉 <b>Buy Now:</b> <a href='{item['url']}'>Click Here</a>"
                     )
-                    # Subscribers အားလုံးကို ပို့မည်
                     for chat_id in subscribers:
                         try:
                             bot.send_message(chat_id, alert_msg, parse_mode='HTML')
                         except: pass
-                    print(f"✅ Alert Sent to subscribers!")
                 else:
                     print(f"❌ Price is still high.")
             else:
@@ -191,16 +190,11 @@ def run_mission_3_price_track(bot, subscribers):
 # ==========================================
 if __name__ == "__main__":
     print("🤖 Bot Checking Updates...")
-    
-    # ၁။ Subscribers စာရင်းရယူမယ်
     subs = get_subscribers()
-    
     if not subs:
         print("No subscribers found.")
     else:
-        # ၂။ Mission တွေကို တစ်ခေါက်ပဲ Run ခိုင်းမယ် (Loop မပတ်တော့ဘူး)
         check_gsm_arena(subs)
         check_facebook_page(subs)
         run_mission_3_price_track(bot, subs)
-    
     print("✅ Check Complete. Saving history & Exiting...")
