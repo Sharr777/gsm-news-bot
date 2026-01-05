@@ -16,21 +16,9 @@ FB_RSS_URL = "https://fetchrss.com/feed/1vYTK6GaV7wB1vYTHS9igFgw.rss"
 GSM_RSS_URL = "https://www.gsmarena.com/rss-news-reviews.php3"
 
 # Memory Files
-STATE_FILE = "last_link_v7.txt"       # v7 ပြောင်းထားပါသည် (Reset)
-FB_STATE_FILE = "last_fb_id_v7.txt"   # v7 ပြောင်းထားပါသည် (Reset)
+STATE_FILE = "last_link_v8.txt"       # v8 (Reset)
+FB_STATE_FILE = "last_fb_id_v8.txt"   # v8 (Reset)
 SUBS_FILE = "subscribers.txt"
-
-# Mission 3: Price Tracking Config
-TRACKING_ITEMS = [
-    {
-        "name": "Xiaomi Pad 7",
-        "url": "https://www.mi.com/th/product/xiaomi-pad-7/buy/?gid=4223714271",
-        "target_price": 8000
-    }
-]
-
-# 👇 AI Models List
-AI_MODELS = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.0-pro"]
 
 # --- Helper Functions ---
 def get_file_content(filename):
@@ -49,82 +37,80 @@ def get_subscribers():
             return set(line.strip() for line in f if line.strip())
     return set()
 
-# 👇 KEY စစ်ဆေးမည့် အထူး Function (Bot စစချင်း အလုပ်လုပ်မည်)
-def test_ai_connection():
-    print("\n🔎 --- STARTING API KEY CHECK ---")
+# 👇 အထူးကဏ္ဍ - Google တွင်ရှိသော Model စာရင်းကို စစ်ဆေးခြင်း
+def list_available_models():
+    print("\n📋 --- CHECKING AVAILABLE MODELS ---")
     clean_key = GEMINI_API_KEY.strip()
     
-    # 1. Check Length
-    if len(clean_key) > 10:
-        print(f"🔑 Key Detected: {clean_key[:5]}...*****...{clean_key[-3:]} (Length: {len(clean_key)})")
-    else:
-        print("❌ Key is EMPTY or too short!")
-        return
-
-    # 2. Force Test Request
-    print("📡 Sending Test Request to Google AI...")
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={clean_key}"
-    headers = {'Content-Type': 'application/json'}
-    payload = {"contents": [{"parts": [{"text": "Say Hello"}]}]}
-    
+    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={clean_key}"
     try:
-        response = requests.post(url, headers=headers, data=json.dumps(payload))
-        print(f"📩 Response Status: {response.status_code}")
-        
+        response = requests.get(url)
         if response.status_code == 200:
-            print("✅ SUCCESS: API Key is working perfectly!")
-        elif response.status_code == 404:
-            print("❌ ERROR 404: Model not found (Key might be for wrong project?)")
-            print(f"Response: {response.text}")
+            models = response.json().get('models', [])
+            print(f"✅ Success! Found {len(models)} models enabled for your Key:")
+            
+            valid_models = []
+            for m in models:
+                # စာရေးနိုင်တဲ့ Model တွေကိုပဲ ရွေးထုတ်မယ်
+                if 'generateContent' in m.get('supportedGenerationMethods', []):
+                    print(f"   👉 {m['name']}")
+                    valid_models.append(m['name'])
+            
+            if not valid_models:
+                print("⚠️ No text-generation models found in the list!")
+            return valid_models
         else:
-            print(f"❌ ERROR: {response.status_code}")
-            print(f"Response: {response.text}")
+            print(f"❌ Failed to list models. Error: {response.text}")
+            return []
     except Exception as e:
-        print(f"❌ Connection Failed: {e}")
-    print("🔎 --- END API KEY CHECK ---\n")
+        print(f"❌ Connection Error: {e}")
+        return []
+    print("📋 --- END CHECK ---\n")
+
+# Global Variable to store working model
+WORKING_MODEL = "models/gemini-1.5-flash" # Default
 
 def get_ai_translation(text, style="facebook"):
     clean_key = GEMINI_API_KEY.strip()
     if not clean_key: return "AI Key Missing"
     
     if style == "facebook":
-        prompt = (
-            "Translate this Thai Facebook sales post into Burmese. "
-            "Focus strictly on: Phone Model, Price, and Condition. "
-            f"Input: {text}"
-        )
+        prompt = f"Translate this Thai phone sales post to Burmese (Model, Price, Condition). Input: {text}"
     else:
-        prompt = f"Summarize this Tech News in Burmese. Focus on Specs and Price. Input: {text}"
+        prompt = f"Summarize this Tech News in Burmese. Input: {text}"
 
-    for model_name in AI_MODELS:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={clean_key}"
-        headers = {'Content-Type': 'application/json'}
-        payload = {"contents": [{"parts": [{"text": prompt}]}]}
-        
-        try:
-            response = requests.post(url, headers=headers, data=json.dumps(payload))
-            if response.status_code == 200:
-                data = response.json()
-                if 'candidates' in data and data['candidates']:
-                    return data['candidates'][0]['content']['parts'][0]['text']
-            elif response.status_code == 404:
-                continue 
-        except: pass
+    # Auto-detected model or fallback
+    model_to_use = WORKING_MODEL
+    
+    # URL တွင် 'models/' ပါပြီးသားမို့ ထပ်မထည့်ရ
+    if not model_to_use.startswith("models/"):
+        model_to_use = f"models/{model_to_use}"
 
-    return "AI ဘာသာပြန်မရပါ (All Models Failed)"
+    url = f"https://generativelanguage.googleapis.com/v1beta/{model_to_use}:generateContent?key={clean_key}"
+    headers = {'Content-Type': 'application/json'}
+    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+    
+    try:
+        response = requests.post(url, headers=headers, data=json.dumps(payload))
+        if response.status_code == 200:
+            data = response.json()
+            if 'candidates' in data and data['candidates']:
+                return data['candidates'][0]['content']['parts'][0]['text']
+        else:
+            print(f"⚠️ AI Failed on {model_to_use}: {response.status_code}")
+    except: pass
+
+    return "AI ဘာသာပြန်မရပါ (Check Log for Details)"
 
 # --- Missions ---
 def check_facebook_page(subscribers):
     print("--- Mission 1: Checking Facebook ---")
     try:
         feed = feedparser.parse(FB_RSS_URL)
-        if not feed.entries: 
-            print("RSS Feed Empty or Load Error")
-            return
+        if not feed.entries: return
         
         last_link = get_file_content(FB_STATE_FILE)
         new_posts = []
-
         for entry in feed.entries:
             if entry.link == last_link: break
             new_posts.append(entry)
@@ -135,19 +121,15 @@ def check_facebook_page(subscribers):
                 cleanr = re.compile('<.*?>')
                 clean_summary = re.sub(cleanr, '', entry.summary)
                 full_text = f"{entry.title}\n{clean_summary}"
-                
-                # AI Call
                 msg = get_ai_translation(full_text, style="facebook")
                 final_msg = f"📘 **Ton Mobile Update**\n\n{msg}\n\n🔗 Link: {entry.link}"
-                
                 for chat_id in subscribers:
                     try: bot.send_message(chat_id, final_msg)
                     except: pass
                 save_file_content(FB_STATE_FILE, entry.link)
         else:
             print("No new Facebook posts.")
-    except Exception as e:
-        print(f"Facebook RSS Error: {e}")
+    except: pass
 
 def check_gsm_arena(subscribers):
     print("--- Mission 2: Checking GSM Arena ---")
@@ -173,26 +155,27 @@ def check_gsm_arena(subscribers):
                 save_file_content(STATE_FILE, entry.link)
     except: pass
 
-def run_mission_3_price_track(bot, subscribers):
-    print("--- Mission 3: Analyzing Xiaomi Pad 7 Price ---")
-    # (Same as before)
-    pass 
-
 # ==========================================
 # MAIN EXECUTION
 # ==========================================
 if __name__ == "__main__":
     print("🤖 Bot Checking Updates...")
     
-    # ၁။ Key ကို အရင်ဆုံး စစ်ဆေးမည် (အရေးကြီး!)
-    test_ai_connection()
+    # ၁။ Model စာရင်းကို အရင်စစ်မယ် (အဖြေရှာရန်)
+    available = list_available_models()
     
-    subs = get_subscribers()
-    if not subs:
-        print("No subscribers found.")
+    if available:
+        # ပထမဆုံးတွေ့တဲ့ Model ကို ယူသုံးမယ်
+        WORKING_MODEL = available[0]
+        print(f"🚀 SELECTED MODEL: {WORKING_MODEL}")
+        
+        subs = get_subscribers()
+        if not subs:
+            print("No subscribers found.")
+        else:
+            check_gsm_arena(subs)
+            check_facebook_page(subs)
     else:
-        check_gsm_arena(subs)
-        check_facebook_page(subs)
-        # run_mission_3_price_track(bot, subs) # Optional
+        print("❌ CRITICAL: No available models found for this Key.")
     
     print("✅ Check Complete. Saving history & Exiting...")
