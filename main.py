@@ -16,8 +16,8 @@ FB_RSS_URL = "https://fetchrss.com/feed/1vYTK6GaV7wB1vYTHS9igFgw.rss"
 GSM_RSS_URL = "https://www.gsmarena.com/rss-news-reviews.php3"
 
 # Memory Files
-STATE_FILE = "last_link_v5.txt"      # v5 လို့ ပြောင်းပါ
-FB_STATE_FILE = "last_fb_id_v5.txt"  # v5 လို့ ပြောင်းပါ
+STATE_FILE = "last_link_v6.txt"      # v6 လို့ ပြောင်းပါ
+FB_STATE_FILE = "last_fb_id_v6.txt"  # v6 လို့ ပြောင်းပါ
 SUBS_FILE = "subscribers.txt"
 
 # Mission 3: Price Tracking Config
