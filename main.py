@@ -51,6 +51,13 @@ AI_MODELS = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.0-pro"]
 
 def get_ai_translation(text, style="facebook"):
     clean_key = GEMINI_API_KEY.strip()
+    
+    # 👇 ဒီစာကြောင်းလေးက Key ရဲ့ ရှေ့ ၅ လုံးကို ထုတ်ပြပါလိမ့်မယ် (Security အတွက် အကုန်မပြပါ)
+    if len(clean_key) > 5:
+        print(f"🔑 CHECK KEY: {clean_key[:5]}... (Length: {len(clean_key)})")
+    else:
+        print("🔑 CHECK KEY: Too Short or Empty!")
+
     if not clean_key: return "AI Key Missing"
     
     # Prompt Setup
