@@ -15,21 +15,22 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 FB_RSS_URL = "https://fetchrss.com/feed/1vYTK6GaV7wB1vYTHS9igFgw.rss"
 GSM_RSS_URL = "https://www.gsmarena.com/rss-news-reviews.php3"
 
-# Memory Files (Reset မလုပ်တော့ပါ၊ ရှိပြီးသားပဲ ဆက်သွားပါမယ်)
-STATE_FILE = "last_link_v8.txt"       
-FB_STATE_FILE = "last_fb_id_v8.txt"   
+# Memory Files (နာမည်အသစ်များဖြင့် Memory Reset လုပ်ပါမည်)
+FB_HISTORY_FILE = "fb_history_v1.txt"  # Facebook အတွက် မှတ်တမ်းအသစ်
+GSM_HISTORY_FILE = "gsm_history_v1.txt" # GSM Arena အတွက် မှတ်တမ်းအသစ်
 SUBS_FILE = "subscribers.txt"
 
 # --- Helper Functions ---
-def get_file_content(filename):
+def get_seen_links(filename):
     if os.path.exists(filename):
         with open(filename, "r") as f:
-            return f.read().strip()
-    return ""
+            return set(line.strip() for line in f if line.strip())
+    return set()
 
-def save_file_content(filename, content):
-    with open(filename, "w") as f:
-        f.write(str(content))
+def save_seen_link(filename, link):
+    # ဖိုင်ထဲကို Link အသစ် ထပ်ဖြည့်မည် (Append Mode)
+    with open(filename, "a") as f:
+        f.write(f"{link}\n")
 
 def get_subscribers():
     if os.path.exists(SUBS_FILE):
@@ -52,12 +53,8 @@ def list_available_models():
                     valid_models.append(m['name'])
             return valid_models
         else:
-            print(f"❌ Failed to list models. Error: {response.text}")
             return []
-    except Exception as e:
-        print(f"❌ Connection Error: {e}")
-        return []
-    print("📋 --- END CHECK ---\n")
+    except: return []
 
 # Global Variable
 WORKING_MODEL = "models/gemini-1.5-flash" 
@@ -78,7 +75,7 @@ def get_ai_translation(text, style="facebook"):
     url = f"https://generativelanguage.googleapis.com/v1beta/{model_to_use}:generateContent?key={clean_key}"
     headers = {'Content-Type': 'application/json'}
     
-    # 👇 ဒီနေရာမှာ Safety Settings တွေ ထပ်ဖြည့်ထားပါတယ် (အရေးကြီး!)
+    # Safety Settings (Block None)
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "safetySettings": [
@@ -96,13 +93,12 @@ def get_ai_translation(text, style="facebook"):
             if 'candidates' in data and data['candidates']:
                 return data['candidates'][0]['content']['parts'][0]['text']
             else:
-                # Safety ကြောင့် Block ခံရရင်တောင် Log မှာ ပြခိုင်းမယ်
-                print(f"⚠️ AI Content Empty (Might be safety blocked): {data}")
+                print(f"⚠️ AI Content Empty: {data}")
         else:
-            print(f"⚠️ AI Failed on {model_to_use}: {response.status_code}")
+            print(f"⚠️ AI Failed: {response.status_code}")
     except: pass
 
-    return "AI ဘာသာပြန်မရပါ (Check Log for Details)"
+    return "AI ဘာသာပြန်မရပါ (Check Log)"
 
 # --- Missions ---
 def check_facebook_page(subscribers):
@@ -111,11 +107,14 @@ def check_facebook_page(subscribers):
         feed = feedparser.parse(FB_RSS_URL)
         if not feed.entries: return
         
-        last_link = get_file_content(FB_STATE_FILE)
+        # ပြီးခဲ့သမျှ Link တွေကို ဖတ်မည်
+        seen_links = get_seen_links(FB_HISTORY_FILE)
         new_posts = []
+
         for entry in feed.entries:
-            if entry.link == last_link: break
-            new_posts.append(entry)
+            # မှတ်တမ်းထဲမှာ မရှိသေးရင် New Post အဖြစ်သတ်မှတ်မည်
+            if entry.link not in seen_links:
+                new_posts.append(entry)
 
         if new_posts:
             print(f"Found {len(new_posts)} NEW posts.")
@@ -124,25 +123,31 @@ def check_facebook_page(subscribers):
                 clean_summary = re.sub(cleanr, '', entry.summary)
                 full_text = f"{entry.title}\n{clean_summary}"
                 msg = get_ai_translation(full_text, style="facebook")
+                
                 final_msg = f"📘 **Ton Mobile Update**\n\n{msg}\n\n🔗 Link: {entry.link}"
                 for chat_id in subscribers:
                     try: bot.send_message(chat_id, final_msg)
                     except: pass
-                save_file_content(FB_STATE_FILE, entry.link)
+                
+                # ပို့ပြီးတာနဲ့ မှတ်တမ်းထဲ ချက်ချင်းထည့်မည်
+                save_seen_link(FB_HISTORY_FILE, entry.link)
         else:
             print("No new Facebook posts.")
-    except: pass
+    except Exception as e:
+        print(f"FB Error: {e}")
 
 def check_gsm_arena(subscribers):
     print("--- Mission 2: Checking GSM Arena ---")
     try:
         feed = feedparser.parse(GSM_RSS_URL)
         if not feed.entries: return
-        last_link = get_file_content(STATE_FILE)
+        
+        seen_links = get_seen_links(GSM_HISTORY_FILE)
         new_posts = []
+        
         for entry in feed.entries:
-            if entry.link == last_link: break
-            new_posts.append(entry)
+            if entry.link not in seen_links:
+                new_posts.append(entry)
         
         if new_posts:
             print(f"Found {len(new_posts)} GSM News.")
@@ -154,7 +159,7 @@ def check_gsm_arena(subscribers):
                 for chat_id in subscribers:
                     try: bot.send_message(chat_id, final_msg)
                     except: pass
-                save_file_content(STATE_FILE, entry.link)
+                save_seen_link(GSM_HISTORY_FILE, entry.link)
     except: pass
 
 # ==========================================
