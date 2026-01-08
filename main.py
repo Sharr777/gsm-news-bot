@@ -37,24 +37,51 @@ def get_subscribers():
             return set(line.strip() for line in f if line.strip())
     return set()
 
-# 👇 AI Function (အဆင့်မြှင့်ထားသည်)
+# 👇 (၁) Model စာရင်းကို အရင်စစ်ဆေးမည့် Function
+def list_available_models():
+    print("Checking available models...")
+    clean_key = GEMINI_API_KEY.strip()
+    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={clean_key}"
+    try:
+        response = requests.get(url)
+        if response.status_code == 200:
+            models = response.json().get('models', [])
+            valid_models = []
+            for m in models:
+                if 'generateContent' in m.get('supportedGenerationMethods', []):
+                    valid_models.append(m['name'])
+            return valid_models
+        else:
+            print(f"List Models Error: {response.text}")
+            return []
+    except Exception as e:
+        print(f"Connection Error: {e}")
+        return []
+
+# Global Variable
+WORKING_MODEL = "models/gemini-1.5-flash" # Default
+
+# 👇 (၂) AI Function (Auto-Detect + Safety Off)
 def get_ai_translation(text, style="facebook"):
     clean_key = GEMINI_API_KEY.strip()
     if not clean_key: return "⚠️ Error: API Key Missing"
     
-    # Prompt
     if style == "facebook":
         prompt = f"Translate this Thai phone sales post to Burmese (Model, Price, Condition). Input: {text}"
     else:
         prompt = f"Summarize this Tech News in Burmese. Input: {text}"
 
-    # ✅ Model ကို အသေသတ်မှတ်လိုက်သည် (Auto မသုံးတော့ပါ)
-    model_name = "gemini-1.5-flash"
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={clean_key}"
+    # Auto-detected model ကို သုံးမည်
+    model_to_use = WORKING_MODEL
     
+    # URL တည်ဆောက်ပုံ ပြင်ဆင်ခြင်း
+    if not model_to_use.startswith("models/"):
+        model_to_use = f"models/{model_to_use}"
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/{model_to_use}:generateContent?key={clean_key}"
     headers = {'Content-Type': 'application/json'}
     
-    # Safety Settings (အကုန်ဖွင့်)
+    # Safety Settings (Block None)
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "safetySettings": [
@@ -68,22 +95,15 @@ def get_ai_translation(text, style="facebook"):
     try:
         response = requests.post(url, headers=headers, data=json.dumps(payload))
         
-        # ✅ အောင်မြင်ခဲ့လျှင်
         if response.status_code == 200:
             data = response.json()
             if 'candidates' in data and data['candidates']:
                 return data['candidates'][0]['content']['parts'][0]['text']
             else:
-                return f"⚠️ AI Error: No content returned (Safety Block?)"
-        
-        # ❌ မအောင်မြင်လျှင် (Error Code ကို Telegram တွင် ပြမည်)
+                return f"⚠️ AI Content Empty (Safety Block?)"
         else:
-            error_msg = f"AI Error {response.status_code}"
-            if response.status_code == 429:
-                error_msg += " (Too Many Requests - Quota Limit)"
-            elif response.status_code == 500:
-                error_msg += " (Google Server Error)"
-            return f"⚠️ {error_msg}"
+            # Error အသေးစိတ်ကို Telegram မှာ ပြမည်
+            return f"⚠️ AI Error {response.status_code}: {response.text[:100]}"
 
     except Exception as e:
         return f"⚠️ System Error: {str(e)}"
@@ -109,7 +129,6 @@ def check_facebook_page(subscribers):
                 clean_summary = re.sub(cleanr, '', entry.summary)
                 full_text = f"{entry.title}\n{clean_summary}"
                 
-                # AI ခေါ်မည်
                 msg = get_ai_translation(full_text, style="facebook")
                 
                 final_msg = f"📘 **Ton Mobile Update**\n\n{msg}\n\n🔗 Link: {entry.link}"
@@ -142,7 +161,6 @@ def check_gsm_arena(subscribers):
                 cleanr = re.compile('<.*?>')
                 clean_summary = re.sub(cleanr, '', entry.summary)
                 
-                # AI ခေါ်မည်
                 msg = get_ai_translation(f"{entry.title}\n{clean_summary}", style="news")
                 
                 final_msg = f"🔔 GSM News Update\n\n{msg}\n\n🔗 {entry.link}"
@@ -157,11 +175,22 @@ def check_gsm_arena(subscribers):
 # ==========================================
 if __name__ == "__main__":
     print("🤖 Bot Checking Updates...")
-    subs = get_subscribers()
-    if not subs:
-        print("No subscribers found.")
+    
+    # (၃) အလုပ်မစခင် Model ရှိ၊မရှိ အရင်စစ်မည်
+    available = list_available_models()
+    
+    if available:
+        # ပထမဆုံးတွေ့တဲ့ အဆင်ပြေမယ့် Model ကို ရွေးထုတ်မည်
+        WORKING_MODEL = available[0]
+        print(f"🚀 SELECTED MODEL: {WORKING_MODEL}")
+        
+        subs = get_subscribers()
+        if not subs:
+            print("No subscribers found.")
+        else:
+            check_gsm_arena(subs)
+            check_facebook_page(subs)
     else:
-        check_gsm_arena(subs)
-        check_facebook_page(subs)
+        print("❌ CRITICAL: No available models found. Check API Key.")
     
     print("✅ Check Complete. Saving history & Exiting...")
