@@ -15,9 +15,9 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 FB_RSS_URL = "https://fetchrss.com/feed/1vYTK6GaV7wB1vYTHS9igFgw.rss"
 GSM_RSS_URL = "https://www.gsmarena.com/rss-news-reviews.php3"
 
-# Memory Files
-STATE_FILE = "last_link_v8.txt"       # v8 (Reset)
-FB_STATE_FILE = "last_fb_id_v8.txt"   # v8 (Reset)
+# Memory Files (Reset မလုပ်တော့ပါ၊ ရှိပြီးသားပဲ ဆက်သွားပါမယ်)
+STATE_FILE = "last_link_v8.txt"       
+FB_STATE_FILE = "last_fb_id_v8.txt"   
 SUBS_FILE = "subscribers.txt"
 
 # --- Helper Functions ---
@@ -37,27 +37,19 @@ def get_subscribers():
             return set(line.strip() for line in f if line.strip())
     return set()
 
-# 👇 အထူးကဏ္ဍ - Google တွင်ရှိသော Model စာရင်းကို စစ်ဆေးခြင်း
+# 👇 Model List Check Function
 def list_available_models():
     print("\n📋 --- CHECKING AVAILABLE MODELS ---")
     clean_key = GEMINI_API_KEY.strip()
-    
     url = f"https://generativelanguage.googleapis.com/v1beta/models?key={clean_key}"
     try:
         response = requests.get(url)
         if response.status_code == 200:
             models = response.json().get('models', [])
-            print(f"✅ Success! Found {len(models)} models enabled for your Key:")
-            
             valid_models = []
             for m in models:
-                # စာရေးနိုင်တဲ့ Model တွေကိုပဲ ရွေးထုတ်မယ်
                 if 'generateContent' in m.get('supportedGenerationMethods', []):
-                    print(f"   👉 {m['name']}")
                     valid_models.append(m['name'])
-            
-            if not valid_models:
-                print("⚠️ No text-generation models found in the list!")
             return valid_models
         else:
             print(f"❌ Failed to list models. Error: {response.text}")
@@ -67,8 +59,8 @@ def list_available_models():
         return []
     print("📋 --- END CHECK ---\n")
 
-# Global Variable to store working model
-WORKING_MODEL = "models/gemini-1.5-flash" # Default
+# Global Variable
+WORKING_MODEL = "models/gemini-1.5-flash" 
 
 def get_ai_translation(text, style="facebook"):
     clean_key = GEMINI_API_KEY.strip()
@@ -79,16 +71,23 @@ def get_ai_translation(text, style="facebook"):
     else:
         prompt = f"Summarize this Tech News in Burmese. Input: {text}"
 
-    # Auto-detected model or fallback
     model_to_use = WORKING_MODEL
-    
-    # URL တွင် 'models/' ပါပြီးသားမို့ ထပ်မထည့်ရ
     if not model_to_use.startswith("models/"):
         model_to_use = f"models/{model_to_use}"
 
     url = f"https://generativelanguage.googleapis.com/v1beta/{model_to_use}:generateContent?key={clean_key}"
     headers = {'Content-Type': 'application/json'}
-    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+    
+    # 👇 ဒီနေရာမှာ Safety Settings တွေ ထပ်ဖြည့်ထားပါတယ် (အရေးကြီး!)
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "safetySettings": [
+            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
+        ]
+    }
     
     try:
         response = requests.post(url, headers=headers, data=json.dumps(payload))
@@ -96,6 +95,9 @@ def get_ai_translation(text, style="facebook"):
             data = response.json()
             if 'candidates' in data and data['candidates']:
                 return data['candidates'][0]['content']['parts'][0]['text']
+            else:
+                # Safety ကြောင့် Block ခံရရင်တောင် Log မှာ ပြခိုင်းမယ်
+                print(f"⚠️ AI Content Empty (Might be safety blocked): {data}")
         else:
             print(f"⚠️ AI Failed on {model_to_use}: {response.status_code}")
     except: pass
@@ -161,11 +163,10 @@ def check_gsm_arena(subscribers):
 if __name__ == "__main__":
     print("🤖 Bot Checking Updates...")
     
-    # ၁။ Model စာရင်းကို အရင်စစ်မယ် (အဖြေရှာရန်)
+    # Check Models
     available = list_available_models()
     
     if available:
-        # ပထမဆုံးတွေ့တဲ့ Model ကို ယူသုံးမယ်
         WORKING_MODEL = available[0]
         print(f"🚀 SELECTED MODEL: {WORKING_MODEL}")
         
