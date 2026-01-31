@@ -11,13 +11,11 @@ from bs4 import BeautifulSoup
 bot = telebot.TeleBot(os.environ["TELEGRAM_TOKEN"])
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
-# RSS Links
-FB_RSS_URL = "https://fetchrss.com/feed/1vYTK6GaV7wB1vYTHS9igFgw.rss"
+# RSS Links (Facebook Link ကို ဖယ်ရှားလိုက်ပါပြီ)
 GSM_RSS_URL = "https://www.gsmarena.com/rss-news-reviews.php3"
 
 # Memory Files
-FB_HISTORY_FILE = "fb_history_v1.txt"  
-GSM_HISTORY_FILE = "gsm_history_v1.txt" 
+GSM_HISTORY_FILE = "gsm_history_v3.txt" # Version 3 (Clean Start)
 SUBS_FILE = "subscribers.txt"
 
 # --- Helper Functions ---
@@ -61,20 +59,17 @@ def list_available_models():
 # Global Variable
 WORKING_MODEL = "models/gemini-1.5-flash" # Default
 
-# 👇 (၂) AI Function (Auto-Detect + Safety Off)
-def get_ai_translation(text, style="facebook"):
+# 👇 (၂) AI Function (GSM Arena အတွက် သီးသန့်)
+def get_ai_translation(text):
     clean_key = GEMINI_API_KEY.strip()
     if not clean_key: return "⚠️ Error: API Key Missing"
     
-    if style == "facebook":
-        prompt = f"Translate this Thai phone sales post to Burmese (Model, Price, Condition). Input: {text}"
-    else:
-        prompt = f"Summarize this Tech News in Burmese. Input: {text}"
+    # GSM Arena အတွက် Prompt
+    prompt = f"Summarize this Tech News in Burmese. Focus on Specs, Price and Release Date. Input: {text}"
 
     # Auto-detected model ကို သုံးမည်
     model_to_use = WORKING_MODEL
     
-    # URL တည်ဆောက်ပုံ ပြင်ဆင်ခြင်း
     if not model_to_use.startswith("models/"):
         model_to_use = f"models/{model_to_use}"
 
@@ -102,48 +97,16 @@ def get_ai_translation(text, style="facebook"):
             else:
                 return f"⚠️ AI Content Empty (Safety Block?)"
         else:
-            # Error အသေးစိတ်ကို Telegram မှာ ပြမည်
             return f"⚠️ AI Error {response.status_code}: {response.text[:100]}"
 
     except Exception as e:
         return f"⚠️ System Error: {str(e)}"
 
 # --- Missions ---
-def check_facebook_page(subscribers):
-    print("--- Mission 1: Checking Facebook ---")
-    try:
-        feed = feedparser.parse(FB_RSS_URL)
-        if not feed.entries: return
-        
-        seen_links = get_seen_links(FB_HISTORY_FILE)
-        new_posts = []
-
-        for entry in feed.entries:
-            if entry.link not in seen_links:
-                new_posts.append(entry)
-
-        if new_posts:
-            print(f"Found {len(new_posts)} NEW posts.")
-            for entry in reversed(new_posts):
-                cleanr = re.compile('<.*?>')
-                clean_summary = re.sub(cleanr, '', entry.summary)
-                full_text = f"{entry.title}\n{clean_summary}"
-                
-                msg = get_ai_translation(full_text, style="facebook")
-                
-                final_msg = f"📘 **Ton Mobile Update**\n\n{msg}\n\n🔗 Link: {entry.link}"
-                for chat_id in subscribers:
-                    try: bot.send_message(chat_id, final_msg)
-                    except: pass
-                
-                save_seen_link(FB_HISTORY_FILE, entry.link)
-        else:
-            print("No new Facebook posts.")
-    except Exception as e:
-        print(f"FB Error: {e}")
+# (Facebook Function ကို ဖျက်လိုက်ပါပြီ)
 
 def check_gsm_arena(subscribers):
-    print("--- Mission 2: Checking GSM Arena ---")
+    print("--- Mission: Checking GSM Arena ---")
     try:
         feed = feedparser.parse(GSM_RSS_URL)
         if not feed.entries: return
@@ -161,26 +124,28 @@ def check_gsm_arena(subscribers):
                 cleanr = re.compile('<.*?>')
                 clean_summary = re.sub(cleanr, '', entry.summary)
                 
-                msg = get_ai_translation(f"{entry.title}\n{clean_summary}", style="news")
+                # AI ခေါ်မည်
+                msg = get_ai_translation(f"{entry.title}\n{clean_summary}")
                 
                 final_msg = f"🔔 GSM News Update\n\n{msg}\n\n🔗 {entry.link}"
                 for chat_id in subscribers:
                     try: bot.send_message(chat_id, final_msg)
                     except: pass
                 save_seen_link(GSM_HISTORY_FILE, entry.link)
+        else:
+            print("No new GSM posts.")
     except: pass
 
 # ==========================================
 # MAIN EXECUTION
 # ==========================================
 if __name__ == "__main__":
-    print("🤖 Bot Checking Updates...")
+    print("🤖 Bot Checking Updates (GSM ONLY)...")
     
     # (၃) အလုပ်မစခင် Model ရှိ၊မရှိ အရင်စစ်မည်
     available = list_available_models()
     
     if available:
-        # ပထမဆုံးတွေ့တဲ့ အဆင်ပြေမယ့် Model ကို ရွေးထုတ်မည်
         WORKING_MODEL = available[0]
         print(f"🚀 SELECTED MODEL: {WORKING_MODEL}")
         
@@ -188,8 +153,8 @@ if __name__ == "__main__":
         if not subs:
             print("No subscribers found.")
         else:
+            # Facebook ကို မစစ်တော့ပါ
             check_gsm_arena(subs)
-            check_facebook_page(subs)
     else:
         print("❌ CRITICAL: No available models found. Check API Key.")
     
